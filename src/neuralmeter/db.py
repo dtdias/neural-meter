@@ -61,6 +61,13 @@ def to_db_ts(dt: datetime) -> str:
     return dt.astimezone(UTC).strftime(TS_FORMAT)
 
 
+def from_db_ts(s: str | None) -> datetime | None:
+    """'YYYY-MM-DD HH:MM:SS' (UTC) -> datetime com fuso UTC. None -> None."""
+    if s is None:
+        return None
+    return datetime.strptime(s, TS_FORMAT).replace(tzinfo=UTC)
+
+
 def utc_now_str() -> str:
     return to_db_ts(datetime.now(UTC))
 
