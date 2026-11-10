@@ -2,18 +2,22 @@
 
 import signal
 import sys
+from datetime import UTC, datetime
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from neuralmeter.db import connect_db
 from neuralmeter.engine import DEFAULT_CHATGPT_LIMITS, calibrated_chatgpt_limits
+from neuralmeter.privacy import apply_retention
 from neuralmeter.server import start_ws_server
 from neuralmeter.ui.hud import HudWindow, UpdateBridge
 from neuralmeter.ui.settings import (
     clamp_opacity,
+    ensure_privacy_salt,
     load_settings,
     parse_model_limits,
+    parse_privacy_settings,
     parse_weight_params,
     save_settings,
 )
@@ -72,11 +76,33 @@ def run_app(argv: list[str] | None = None) -> int:
     keepalive.timeout.connect(lambda: None)
     keepalive.start(500)
 
+    if ensure_privacy_salt(settings):
+        save_settings(settings)
+    privacy = parse_privacy_settings(settings)
+    apply_retention(db, datetime.now(UTC), privacy.retention_days)
+    retention_timer = QTimer()
+    retention_timer.timeout.connect(
+        lambda: apply_retention(db, datetime.now(UTC), privacy.retention_days)
+    )
+    retention_timer.start(6 * 60 * 60 * 1000)
+
     server = start_ws_server(
         db,
         on_update=bridge.emit_update,
         weight_params=parse_weight_params(settings.get("claude_weight")),
+        privacy=privacy,
     )
+
+    def on_privacy_changed(value: bool) -> None:
+        nonlocal privacy
+        raw = settings.get("privacy")
+        settings["privacy"] = {
+            **(raw if isinstance(raw, dict) else {}),
+            "hash_conversation_ids": value,
+        }
+        save_settings(settings)
+        privacy = parse_privacy_settings(settings)
+        server.set_privacy(privacy)
 
     def quit_app() -> None:
         server.stop()
@@ -92,6 +118,8 @@ def run_app(argv: list[str] | None = None) -> int:
         conn=db,
         notify_renewal=bool(settings.get("notify_renewal", True)),
         on_notify_changed=on_notify_changed,
+        privacy_hash=privacy.hash_conversation_ids,
+        on_privacy_changed=on_privacy_changed,
     )
     if tray_ok:
         tray.show()

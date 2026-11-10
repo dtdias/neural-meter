@@ -7,9 +7,10 @@ from collections.abc import Callable
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QActionGroup, QColor, QFont, QIcon, QPainter, QPixmap
-from PySide6.QtWidgets import QMenu, QSystemTrayIcon
+from PySide6.QtWidgets import QMenu, QMessageBox, QSystemTrayIcon
 
 from neuralmeter.autostart import is_autostart_enabled, set_autostart
+from neuralmeter.db import clear_usage_events
 from neuralmeter.ui.hud import HudWindow
 from neuralmeter.ui.limits_dialog import open_limits_dialog
 from neuralmeter.ui.renewal import renewal_message
@@ -46,8 +47,11 @@ class TrayController(QSystemTrayIcon):
         on_limits_saved: Callable[[], None] | None = None,
         notify_renewal: bool = True,
         on_notify_changed: Callable[[bool], None] | None = None,
+        privacy_hash: bool = True,
+        on_privacy_changed: Callable[[bool], None] | None = None,
     ) -> None:
         super().__init__(make_tray_icon())
+        self.on_privacy_changed = on_privacy_changed
         self.hud = hud
         self.conn = conn
         self.on_limits_saved = on_limits_saved
@@ -100,6 +104,15 @@ class TrayController(QSystemTrayIcon):
         self.act_autostart.toggled.connect(self._on_autostart_toggled)
 
         self.menu.addSeparator()
+        self.act_private = self.menu.addAction("Modo privado (hash IDs)")
+        self.act_private.setCheckable(True)
+        self.act_private.setChecked(bool(privacy_hash))
+        self.act_private.toggled.connect(self._on_private_toggled)
+
+        self.act_clear = self.menu.addAction("Apagar histórico local…")
+        self.act_clear.triggered.connect(self._clear_history)
+
+        self.menu.addSeparator()
         self.act_quit = self.menu.addAction("Sair")
         self.act_quit.triggered.connect(lambda: on_quit())
 
@@ -113,6 +126,25 @@ class TrayController(QSystemTrayIcon):
             if self.on_limits_saved is not None:
                 self.on_limits_saved()
             self.hud.refresh()
+
+    def _on_private_toggled(self, value: bool) -> None:
+        if self.on_privacy_changed is not None:
+            self.on_privacy_changed(bool(value))
+
+    def _clear_history(self) -> int:
+        """Confirma e apaga usage_events; retorna removidos (0 se cancelado/sem conexão)."""
+        if self.conn is None:
+            return 0
+        answer = QMessageBox.question(
+            None,
+            "Apagar histórico",
+            "Apagar todo o histórico local de uso? Limites e calibração são mantidos.",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return 0
+        removed = clear_usage_events(self.conn)
+        self.hud.refresh()
+        return removed
 
     def _on_notify_toggled(self, value: bool) -> None:
         self.notify_enabled = bool(value)
@@ -158,5 +190,16 @@ def build_tray(
     on_limits_saved: Callable[[], None] | None = None,
     notify_renewal: bool = True,
     on_notify_changed: Callable[[bool], None] | None = None,
+    privacy_hash: bool = True,
+    on_privacy_changed: Callable[[bool], None] | None = None,
 ) -> TrayController:
-    return TrayController(hud, on_quit, conn, on_limits_saved, notify_renewal, on_notify_changed)
+    return TrayController(
+        hud,
+        on_quit,
+        conn,
+        on_limits_saved,
+        notify_renewal,
+        on_notify_changed,
+        privacy_hash,
+        on_privacy_changed,
+    )

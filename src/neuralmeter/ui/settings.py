@@ -2,11 +2,14 @@
 
 import json
 import os
+import secrets
+import string
 from datetime import timedelta
 from pathlib import Path
 
 from neuralmeter.config import get_data_dir
 from neuralmeter.engine import DEFAULT_WEIGHT_PARAMS, ModelLimit, WeightParams
+from neuralmeter.privacy import PrivacySettings, clamp_retention_days
 
 DEFAULTS: dict = {"hud_pos": None, "opacity": 100, "compact": False, "click_through": False}
 
@@ -65,6 +68,28 @@ def parse_weight_params(raw) -> WeightParams:
         step_chars=_num(raw.get("step_chars"), d.step_chars, lo=0, hi=10_000_000, lo_open=True),
         max_weight=_num(raw.get("max_weight"), d.max_weight, lo=1, hi=1000),
     )
+
+
+def parse_privacy_settings(settings) -> PrivacySettings:
+    """settings['privacy'] + settings['privacy_salt'] -> PrivacySettings; invalido -> default."""
+    raw = settings.get("privacy") if isinstance(settings, dict) else None
+    raw = raw if isinstance(raw, dict) else {}
+    flag = raw.get("hash_conversation_ids")
+    salt = settings.get("privacy_salt") if isinstance(settings, dict) else None
+    return PrivacySettings(
+        hash_conversation_ids=flag if isinstance(flag, bool) else True,
+        retention_days=clamp_retention_days(raw.get("retention_days")),
+        salt=salt if isinstance(salt, str) else "",
+    )
+
+
+def ensure_privacy_salt(settings: dict) -> bool:
+    """Garante settings['privacy_salt'] (hex de 32 chars). True se mudou (chamador salva)."""
+    salt = settings.get("privacy_salt")
+    if isinstance(salt, str) and len(salt) == 32 and all(c in string.hexdigits for c in salt):
+        return False
+    settings["privacy_salt"] = secrets.token_hex(16)
+    return True
 
 
 def settings_path() -> Path:

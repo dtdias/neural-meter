@@ -12,6 +12,7 @@ from neuralmeter.engine import (
     sync_weekly_reset,
 )
 from neuralmeter.engine.weight import DEFAULT_WEIGHT_PARAMS, WeightParams, weight_for_usage
+from neuralmeter.privacy import PrivacySettings, hash_conversation_id
 from neuralmeter.server.protocol import Hello, Limit, Ping, Status, Usage
 
 
@@ -19,6 +20,7 @@ def handle_message(
     conn: sqlite3.Connection,
     msg,
     weight_params: WeightParams = DEFAULT_WEIGHT_PARAMS,
+    privacy: PrivacySettings | None = None,
 ) -> tuple[dict, tuple[str, dict] | None]:
     """Retorna (reply_dict, update|None); update = (kind, payload) p/ a UI.
 
@@ -27,11 +29,14 @@ def handle_message(
         return {"type": "pong"}, None
     if isinstance(msg, Usage):
         weight = weight_for_usage(msg.provider, msg.prompt_chars, msg.context_chars, weight_params)
+        conv_id = msg.conversation_id
+        if privacy is not None and privacy.hash_conversation_ids:
+            conv_id = hash_conversation_id(conv_id, privacy.salt)
         insert_usage_event(
             conn,
             msg.provider,
             msg.model,
-            conversation_id=msg.conversation_id,
+            conversation_id=conv_id,
             prompt_chars=msg.prompt_chars,
             context_chars=msg.context_chars,
             weight_units=weight,
