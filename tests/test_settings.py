@@ -26,7 +26,7 @@ def test_unknown_key_preserved(tmp_path):
     p = tmp_path / "s.json"
     p.write_text('{"foo": 1}', encoding="utf-8")
     d = load_settings(p)
-    assert d["foo"] == 1 and d["opacity"] == 1.0
+    assert d["foo"] == 1 and d["opacity"] == 100
     save_settings(d, p)
     assert load_settings(p)["foo"] == 1
 
@@ -34,3 +34,13 @@ def test_unknown_key_preserved(tmp_path):
 def test_default_path_uses_data_dir(tmp_data_dir):
     save_settings({"hud_pos": [1, 2]})
     assert (tmp_data_dir / "settings.json").exists()
+
+
+def test_clamp_opacity():
+    from neuralmeter.ui.settings import clamp_opacity
+
+    assert clamp_opacity(5) == 20
+    assert clamp_opacity(150) == 100
+    assert clamp_opacity(None) == 100
+    assert clamp_opacity("x") == 100
+    assert clamp_opacity(55) == 55

@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from neuralmeter.ui.settings import clamp_opacity
 from neuralmeter.ui.snap import anchor_resize, clamp_to_screens, pick_screen, snap_to_edges
 from neuralmeter.ui.view_model import (
     LEVEL_COLORS,
@@ -163,6 +164,10 @@ def _default_loader(now: datetime) -> dict:
 
 
 class HudWindow(QWidget):
+    opacity_changed = Signal(int)
+    click_through_changed = Signal(bool)
+    compact_changed = Signal(bool)
+
     def __init__(
         self,
         on_moved: Callable[[int, int], None] | None = None,
@@ -170,6 +175,8 @@ class HudWindow(QWidget):
         clock: Callable[[], datetime] | None = None,
         compact: bool = False,
         on_compact_changed: Callable[[bool], None] | None = None,
+        opacity: int = 100,
+        click_through: bool = False,
     ) -> None:
         super().__init__()
         self.on_moved = on_moved
@@ -181,6 +188,8 @@ class HudWindow(QWidget):
         self.compact = compact
         self.on_compact_changed = on_compact_changed
         self._hover_expanded = False
+        self.opacity = clamp_opacity(opacity)
+        self.click_through = bool(click_through)
         self._leave_timer = QTimer(self)
         self._leave_timer.setSingleShot(True)
         self._leave_timer.setInterval(LEAVE_DELAY_MS)
@@ -190,6 +199,9 @@ class HudWindow(QWidget):
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool
         )
+        if self.click_through:
+            self.setWindowFlag(Qt.WindowType.WindowTransparentForInput, True)
+        self.setWindowOpacity(self.opacity / 100)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.title_label = QLabel("NeuralMeter")
@@ -297,8 +309,41 @@ class HudWindow(QWidget):
         self._hover_expanded = False
         self._leave_timer.stop()
         self._apply_mode()
-        if changed and self.on_compact_changed:
-            self.on_compact_changed(value)
+        if changed:
+            if self.on_compact_changed:
+                self.on_compact_changed(value)
+            self.compact_changed.emit(value)
+
+    def set_opacity(self, pct) -> None:
+        value = clamp_opacity(pct)
+        self.setWindowOpacity(value / 100)
+        if value != self.opacity:
+            self.opacity = value
+            self.opacity_changed.emit(value)
+
+    def set_click_through(self, on: bool) -> None:
+        on = bool(on)
+        if on == self.click_through:
+            return
+        self.click_through = on
+        if on:
+            self._leave_timer.stop()
+            if self._hover_expanded:
+                self._hover_expanded = False
+                self._apply_mode()
+        pos = self.pos()
+        visible = self.isVisible()
+        self.setWindowFlag(Qt.WindowType.WindowTransparentForInput, on)
+        if visible:
+            self.show()
+            self.move(pos)
+        self.click_through_changed.emit(on)
+
+    def toggle_visible(self) -> None:
+        if self.isVisible():
+            self.hide()
+        else:
+            self.show()
 
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
