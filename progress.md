@@ -75,3 +75,4 @@ Objetivo final: `prd.md`.
   - [x] Build `NeuralMeter.exe` (PyInstaller onefile, windowed) + smoke test frozen. 2026-11-10: packaging/{entry.py,neuralmeter.spec}, scripts/build_exe.py [--smoke], selftest.run_self_test (--self-test/--self-test-out); dist/NeuralMeter.exe 47.2 MB, smoke frozen 5/5 ok exit 0.
   - [x] (2026-11-10: packaging/neuralmeter.iss, scripts/build_installer.py {find_iscc,build_extension_zip,iscc_command,build_installer}; setup 48.8 MB gerado; smoke silencioso instalar/self-test/desinstalar exit 0/0/0; zip ext 20.7 KB determinístico; README Instalação) Instalador Inno Setup (`NeuralMeter-Setup.exe`) + zip da extensão + README de instalação.
 - [x] 2026-11-10 - README GitHub com hero banner (vectorcraft) e botão de download. assets/hero.{svg,png,vectorcraft}, README.md (link direto exige asset de Release NeuralMeter-Setup.exe; Release não criada).
+- [x] 2026-11-10 — README reestruturado (modelo mercadovoz-pwa), PT + EN, hero bilíngue.
