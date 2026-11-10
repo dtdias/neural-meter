@@ -8,18 +8,17 @@ from neuralmeter.db import (
     from_db_ts,
     get_events_since,
     get_provider_state,
-    to_db_ts,
-    update_provider_state,
 )
-from neuralmeter.engine.window import WINDOW_5H, WindowSnapshot, calc_percent
+from neuralmeter.engine.window import (
+    WINDOW_5H,
+    WindowSnapshot,
+    calc_percent,
+    sync_official_reset,
+)
+from neuralmeter.engine.window import weight as _weight
 
 PROVIDER = "claude"
 LOOKBACK = timedelta(hours=24)
-
-
-def _weight(event: Mapping) -> float:
-    w = event["weight_units"]
-    return 1.0 if w is None else float(w)
 
 
 def compute_claude_5h(events: Sequence[Mapping], state: Mapping, now: datetime) -> WindowSnapshot:
@@ -88,7 +87,4 @@ def sync_claude_official_reset(
     conn: sqlite3.Connection, reset_at: datetime, rate_limited: bool | None = None
 ) -> None:
     """Grava o reset oficial reportado pelo servidor (sobrescreve a estimativa)."""
-    fields: dict = {"window_5h_reset_at": to_db_ts(reset_at)}
-    if rate_limited is not None:
-        fields["is_rate_limited"] = int(rate_limited)
-    update_provider_state(conn, PROVIDER, **fields)
+    sync_official_reset(conn, PROVIDER, reset_at, rate_limited)
