@@ -14,6 +14,7 @@ from neuralmeter.ui.settings import (
     clamp_opacity,
     load_settings,
     parse_model_limits,
+    parse_weight_params,
     save_settings,
 )
 from neuralmeter.ui.tray import build_tray
@@ -71,7 +72,11 @@ def run_app(argv: list[str] | None = None) -> int:
     keepalive.timeout.connect(lambda: None)
     keepalive.start(500)
 
-    server = start_ws_server(db, on_update=bridge.emit_update)
+    server = start_ws_server(
+        db,
+        on_update=bridge.emit_update,
+        weight_params=parse_weight_params(settings.get("claude_weight")),
+    )
 
     def quit_app() -> None:
         server.stop()

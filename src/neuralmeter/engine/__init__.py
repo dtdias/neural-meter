@@ -29,6 +29,12 @@ from neuralmeter.engine.weekly import (
     get_weekly_snapshot,
     sync_weekly_reset,
 )
+from neuralmeter.engine.weight import (
+    DEFAULT_WEIGHT_PARAMS,
+    WeightParams,
+    compute_claude_weight,
+    weight_for_usage,
+)
 from neuralmeter.engine.window import (
     WINDOW_5H,
     WINDOW_7D,
@@ -40,13 +46,17 @@ from neuralmeter.engine.window import (
 __all__ = [
     "DEFAULT_CHATGPT_LIMITS",
     "DEFAULT_WEEKLY_LIMITS",
+    "DEFAULT_WEIGHT_PARAMS",
     "WINDOW_5H",
     "WINDOW_7D",
     "ChatGPT5hResult",
     "ModelLimit",
     "WeeklyQuota",
     "WeeklyResult",
+    "WeightParams",
     "WindowSnapshot",
+    "compute_claude_weight",
+    "weight_for_usage",
     "apply_block_calibration",
     "calc_percent",
     "calibrate_ceiling",

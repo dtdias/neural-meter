@@ -11,9 +11,12 @@ def main(argv: list[str] | None = None) -> int:
     if "--server-only" in argv:
         from neuralmeter.db import connect_db
         from neuralmeter.server import start_ws_server
+        from neuralmeter.ui.settings import load_settings, parse_weight_params
 
         server = start_ws_server(
-            connect_db(), on_update=lambda kind, payload: print(f"update {kind}: {payload}")
+            connect_db(),
+            on_update=lambda kind, payload: print(f"update {kind}: {payload}"),
+            weight_params=parse_weight_params(load_settings().get("claude_weight")),
         )
         try:
             while True:

@@ -69,3 +69,21 @@ def test_parse_model_limits():
     assert parse_model_limits(None) == {}
     assert parse_model_limits([1, 2]) == {}
     assert parse_model_limits("x") == {}
+
+
+def test_parse_weight_params_defaults():
+    from neuralmeter.engine import DEFAULT_WEIGHT_PARAMS
+    from neuralmeter.ui.settings import parse_weight_params
+
+    for raw in (None, "x", {}, {"step_chars": 0}, {"max_weight": True}):
+        assert parse_weight_params(raw) == DEFAULT_WEIGHT_PARAMS
+
+
+def test_parse_weight_params_valid():
+    from neuralmeter.engine import WeightParams
+    from neuralmeter.ui.settings import parse_weight_params
+
+    raw = {"base_chars": 0, "step_chars": 1000, "max_weight": 10}
+    assert parse_weight_params(raw) == WeightParams(0, 1000, 10)
+    assert parse_weight_params({"max_weight": 0.5, "step_chars": 500}).step_chars == 500
+    assert parse_weight_params({"max_weight": 5000}).max_weight == 50.0
