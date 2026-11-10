@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QMenu, QMessageBox, QSystemTrayIcon
 from neuralmeter.autostart import is_autostart_enabled, set_autostart
 from neuralmeter.db import clear_usage_events
 from neuralmeter.ui.hud import HudWindow
+from neuralmeter.ui.icons import load_app_icon
 from neuralmeter.ui.limits_dialog import open_limits_dialog
 from neuralmeter.ui.renewal import renewal_message
 from neuralmeter.ui.settings import OPACITY_PRESETS
@@ -20,6 +21,11 @@ log = logging.getLogger(__name__)
 
 
 def make_tray_icon() -> QIcon:
+    """Icone real do app; fallback desenhado se o asset faltar."""
+    return load_app_icon() or _fallback_tray_icon()
+
+
+def _fallback_tray_icon() -> QIcon:
     """Icone provisorio 32x32: circulo #6366f1 com 'NM' branco."""
     pm = QPixmap(32, 32)
     pm.fill(Qt.GlobalColor.transparent)

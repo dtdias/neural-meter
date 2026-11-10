@@ -12,6 +12,7 @@ from neuralmeter.engine import DEFAULT_CHATGPT_LIMITS, calibrated_chatgpt_limits
 from neuralmeter.privacy import apply_retention
 from neuralmeter.server import start_ws_server
 from neuralmeter.ui.hud import HudWindow, UpdateBridge
+from neuralmeter.ui.icons import load_app_icon
 from neuralmeter.ui.settings import (
     clamp_opacity,
     ensure_privacy_salt,
@@ -28,6 +29,9 @@ from neuralmeter.ui.view_model import load_hud_view
 def run_app(argv: list[str] | None = None) -> int:
     app = QApplication(sys.argv if argv is None else ["neuralmeter", *argv])
     app.setQuitOnLastWindowClosed(False)
+    app_icon = load_app_icon()
+    if app_icon is not None:
+        app.setWindowIcon(app_icon)
     settings = load_settings()
     db = connect_db()
     bridge = UpdateBridge()
