@@ -1,9 +1,11 @@
 import threading
 import time
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, QPoint, Qt
 from PySide6.QtGui import QGuiApplication
+from PySide6.QtTest import QTest
 
 from neuralmeter.ui.hud import HudWindow, UpdateBridge
 from neuralmeter.ui.view_model import LEVEL_COLORS, ProviderView, level_for_percent
@@ -95,6 +97,67 @@ def test_bridge_cross_thread(qapp):
         qapp.processEvents()
         time.sleep(0.01)
     assert hud.status_label.text() == "aguardando aba"
+
+
+def test_default_expanded_size(qapp):
+    hud = HudWindow()
+    assert (hud.width(), hud.height()) == (300, 190)
+    assert hud.stack.currentWidget() is hud.expanded_page
+
+
+def test_compact_initial(qapp):
+    hud = HudWindow(compact=True)
+    assert (hud.width(), hud.height()) == (200, 56)
+    assert hud.stack.currentWidget() is hud.compact_page
+
+
+def test_set_compact_callback_once(qapp):
+    calls = []
+    hud = HudWindow(on_compact_changed=calls.append)
+    hud.set_compact(True)
+    hud.set_compact(True)
+    assert calls == [True]
+    assert (hud.width(), hud.height()) == (200, 56)
+
+
+def test_double_click_toggles(qapp):
+    calls = []
+    hud = HudWindow(on_compact_changed=calls.append)
+    QTest.mouseDClick(hud, Qt.MouseButton.LeftButton)
+    assert hud.compact is True
+    QTest.mouseDClick(hud, Qt.MouseButton.LeftButton)
+    assert hud.compact is False
+    assert calls == [True, False]
+
+
+def test_hover_expands_then_returns(qapp):
+    calls = []
+    hud = HudWindow(compact=True, on_compact_changed=calls.append)
+    qapp.sendEvent(hud, QEvent(QEvent.Type.Enter))
+    assert (hud.width(), hud.height()) == (300, 190)
+    qapp.sendEvent(hud, QEvent(QEvent.Type.Leave))
+    assert hud._leave_timer.isActive()
+    hud._leave_timer.timeout.emit()
+    assert (hud.width(), hud.height()) == (200, 56)
+    assert hud.compact is True
+    assert calls == []
+
+
+def test_hover_ignored_while_dragging(qapp):
+    hud = HudWindow(compact=True)
+    hud._drag_offset = QPoint(1, 1)
+    qapp.sendEvent(hud, QEvent(QEvent.Type.Enter))
+    assert (hud.width(), hud.height()) == (200, 56)
+
+
+def test_compact_row_labels(qapp):
+    now = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
+    limited = replace(_view("chatgpt", pct=95), rate_limited=True)
+    views = {"claude": _view(pct=75), "chatgpt": limited}
+    hud = HudWindow(view_loader=lambda n: views, clock=lambda: now)
+    assert hud.compact_rows["claude"].text.text() == "restam 25%"
+    assert hud.compact_rows["claude"].bar.value() == 75
+    assert hud.compact_rows["chatgpt"].text.text() == "bloq."
 
 
 def test_apply_saved_position_none_inside_screen(qapp):

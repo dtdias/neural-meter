@@ -62,6 +62,13 @@ class ProviderView:
     rate_limited: bool
 
 
+def remaining_label(view: "ProviderView") -> str:
+    """Texto da pilula: 'bloq.' se bloqueado; senao 'restam N%' da janela 5h."""
+    if view.rate_limited:
+        return "bloq."
+    return f"restam {max(0, min(100, 100 - round(view.pct_5h)))}%"
+
+
 def build_provider_view(
     provider: str, snap_5h: WindowSnapshot, weekly: WeeklyResult
 ) -> ProviderView:
