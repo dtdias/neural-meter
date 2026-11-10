@@ -20,3 +20,9 @@ test("manifest MV3 com apenas 2 hosts", () => {
     "https://chatgpt.com/*",
   ]);
 });
+
+test("manifest: service worker module e permissions alarms", () => {
+  assert.equal(manifest.background.service_worker, "src/background.js");
+  assert.equal(manifest.background.type, "module");
+  assert.deepEqual(manifest.permissions, ["alarms"]);
+});
