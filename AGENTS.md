@@ -38,7 +38,7 @@
 - Só servidor WS (sem UI): `uv run neuralmeter --server-only` (Ctrl+C p/ parar)
 - Desempenho (RNF01/02): `uv run python scripts/perf_check.py [--json] [--report-only]` (porta 8765 livre; ~45 s). Teste perf: `uv run pytest -m perf -q` (fora do run padrão).
 - Gerar ícones (PNG/ICO a partir de assets/logo.svg): `uv run python scripts/build_icons.py`
-- Build: a definir (Fase 3)
+- Build exe: `uv run python scripts/build_exe.py --smoke` (gera `dist/NeuralMeter.exe`; `--self-test` = smoke sem UI)
 - Console Windows: se `—` falhar na saída, definir `$env:PYTHONIOENCODING="utf-8"`.
 
 ## Restrições do produto que agentes erram
