@@ -6,7 +6,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from neuralmeter.config import get_data_dir
-from neuralmeter.engine import ModelLimit
+from neuralmeter.engine import DEFAULT_WEIGHT_PARAMS, ModelLimit, WeightParams
 
 DEFAULTS: dict = {"hud_pos": None, "opacity": 100, "compact": False, "click_through": False}
 
@@ -43,6 +43,28 @@ def parse_model_limits(raw) -> dict[str, ModelLimit]:
             continue
         out[key.strip().lower()] = ModelLimit(timedelta(hours=int(hours)), float(units))
     return out
+
+
+def _num(v, default, *, lo: float, hi: float, lo_open: bool = False):
+    if isinstance(v, bool) or not isinstance(v, int | float):
+        return default
+    if v != v or v > hi or v < lo or (lo_open and v == lo):
+        return default
+    return v
+
+
+def parse_weight_params(raw) -> WeightParams:
+    """settings['claude_weight'] -> WeightParams; campo invalido -> default daquele campo.
+
+    PREMISSA peso Claude (progress.md Decisoes, 2026-11-10)."""
+    d = DEFAULT_WEIGHT_PARAMS
+    if not isinstance(raw, dict):
+        return d
+    return WeightParams(
+        base_chars=_num(raw.get("base_chars"), d.base_chars, lo=0, hi=10_000_000),
+        step_chars=_num(raw.get("step_chars"), d.step_chars, lo=0, hi=10_000_000, lo_open=True),
+        max_weight=_num(raw.get("max_weight"), d.max_weight, lo=1, hi=1000),
+    )
 
 
 def settings_path() -> Path:
