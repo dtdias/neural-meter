@@ -225,3 +225,18 @@ def test_toggle_visible(qapp):
     hud.toggle_visible()
     assert hud.isVisible()
     hud.close()
+
+
+def test_renewed_signal_on_tick(qapp):
+    now = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
+    clock = [now]
+    views = {"claude": _view(pct=40, reset=now + timedelta(minutes=5))}
+    hud = HudWindow(view_loader=lambda n: views, clock=lambda: clock[0])
+    got = []
+    hud.renewed.connect(got.append)
+    hud.tick()
+    assert got == []
+    clock[0] = now + timedelta(minutes=6)
+    hud.tick()
+    hud.tick()
+    assert got == ["claude"]

@@ -82,7 +82,17 @@ def run_app(argv: list[str] | None = None) -> int:
         server.stop()
         app.quit()
 
-    tray = build_tray(hud, quit_app, conn=db)
+    def on_notify_changed(value: bool) -> None:
+        settings["notify_renewal"] = value
+        save_settings(settings)
+
+    tray = build_tray(
+        hud,
+        quit_app,
+        conn=db,
+        notify_renewal=bool(settings.get("notify_renewal", True)),
+        on_notify_changed=on_notify_changed,
+    )
     if tray_ok:
         tray.show()
     hud.show()

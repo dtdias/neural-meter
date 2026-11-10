@@ -1,5 +1,6 @@
 """Icone na bandeja: mostrar/ocultar, compacto, opacidade e click-through do HUD."""
 
+import logging
 import sqlite3
 import sys
 from collections.abc import Callable
@@ -11,7 +12,10 @@ from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 from neuralmeter.autostart import is_autostart_enabled, set_autostart
 from neuralmeter.ui.hud import HudWindow
 from neuralmeter.ui.limits_dialog import open_limits_dialog
+from neuralmeter.ui.renewal import renewal_message
 from neuralmeter.ui.settings import OPACITY_PRESETS
+
+log = logging.getLogger(__name__)
 
 
 def make_tray_icon() -> QIcon:
@@ -40,11 +44,15 @@ class TrayController(QSystemTrayIcon):
         on_quit: Callable[[], None],
         conn: sqlite3.Connection | None = None,
         on_limits_saved: Callable[[], None] | None = None,
+        notify_renewal: bool = True,
+        on_notify_changed: Callable[[bool], None] | None = None,
     ) -> None:
         super().__init__(make_tray_icon())
         self.hud = hud
         self.conn = conn
         self.on_limits_saved = on_limits_saved
+        self.on_notify_changed = on_notify_changed
+        self.notify_enabled = bool(notify_renewal)
         self.setToolTip("NeuralMeter")
         self.menu = QMenu()
         self.act_toggle = self.menu.addAction("Mostrar/Ocultar HUD")
@@ -76,6 +84,12 @@ class TrayController(QSystemTrayIcon):
         hud.click_through_changed.connect(self._sync_click_through)
 
         self.menu.addSeparator()
+        self.act_notify = self.menu.addAction("Avisar renovação 5h")
+        self.act_notify.setCheckable(True)
+        self.act_notify.setChecked(self.notify_enabled)
+        self.act_notify.toggled.connect(self._on_notify_toggled)
+        hud.renewed.connect(self.notify_renewal)
+
         self.act_limits = self.menu.addAction("Configurar limites…")
         self.act_limits.triggered.connect(self._configure_limits)
 
@@ -99,6 +113,21 @@ class TrayController(QSystemTrayIcon):
             if self.on_limits_saved is not None:
                 self.on_limits_saved()
             self.hud.refresh()
+
+    def _on_notify_toggled(self, value: bool) -> None:
+        self.notify_enabled = bool(value)
+        if self.on_notify_changed is not None:
+            self.on_notify_changed(self.notify_enabled)
+
+    def notify_renewal(self, provider: str) -> None:
+        """Toast nativo (Win10/11) via bandeja; sem tray só registra em log."""
+        if not self.notify_enabled:
+            return
+        title, body = renewal_message(provider)
+        if QSystemTrayIcon.isSystemTrayAvailable():
+            self.showMessage(title, body, QSystemTrayIcon.MessageIcon.Information, 5000)
+        else:
+            log.info("%s: %s", title, body)
 
     def _on_autostart_toggled(self, value: bool) -> None:
         if set_autostart(bool(value)):
@@ -127,5 +156,7 @@ def build_tray(
     on_quit: Callable[[], None],
     conn: sqlite3.Connection | None = None,
     on_limits_saved: Callable[[], None] | None = None,
+    notify_renewal: bool = True,
+    on_notify_changed: Callable[[bool], None] | None = None,
 ) -> TrayController:
-    return TrayController(hud, on_quit, conn, on_limits_saved)
+    return TrayController(hud, on_quit, conn, on_limits_saved, notify_renewal, on_notify_changed)
