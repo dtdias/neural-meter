@@ -7,9 +7,15 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from neuralmeter.db import connect_db
+from neuralmeter.engine import DEFAULT_CHATGPT_LIMITS
 from neuralmeter.server import start_ws_server
 from neuralmeter.ui.hud import HudWindow, UpdateBridge
-from neuralmeter.ui.settings import clamp_opacity, load_settings, save_settings
+from neuralmeter.ui.settings import (
+    clamp_opacity,
+    load_settings,
+    parse_model_limits,
+    save_settings,
+)
 from neuralmeter.ui.tray import build_tray
 from neuralmeter.ui.view_model import load_hud_view
 
@@ -37,11 +43,17 @@ def run_app(argv: list[str] | None = None) -> int:
         settings["click_through"] = value
         save_settings(settings)
 
+    def model_limits() -> dict:
+        return {
+            **DEFAULT_CHATGPT_LIMITS,
+            **parse_model_limits(settings.get("chatgpt_model_limits")),
+        }
+
     # Sem tray, click-through prenderia o usuario: forca desligado.
     tray_ok = QSystemTrayIcon.isSystemTrayAvailable()
     hud = HudWindow(
         on_moved=on_moved,
-        view_loader=lambda now: load_hud_view(db, now),
+        view_loader=lambda now: load_hud_view(db, now, chatgpt_limits=model_limits()),
         compact=bool(settings.get("compact")),
         on_compact_changed=on_compact_changed,
         opacity=clamp_opacity(settings.get("opacity")),
@@ -64,7 +76,7 @@ def run_app(argv: list[str] | None = None) -> int:
         server.stop()
         app.quit()
 
-    tray = build_tray(hud, quit_app)
+    tray = build_tray(hud, quit_app, conn=db)
     if tray_ok:
         tray.show()
     hud.show()

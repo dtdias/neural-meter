@@ -44,3 +44,28 @@ def test_clamp_opacity():
     assert clamp_opacity(None) == 100
     assert clamp_opacity("x") == 100
     assert clamp_opacity(55) == 55
+
+
+def test_parse_model_limits():
+    from datetime import timedelta
+
+    from neuralmeter.engine import ModelLimit
+    from neuralmeter.ui.settings import parse_model_limits
+
+    raw = {
+        "GPT-5": {"window_hours": 5, "max_units": 100},
+        "o3": {"window_hours": 3, "max_units": 12.5},
+        "bad_hours": {"window_hours": 4, "max_units": 10},
+        "bad_units": {"window_hours": 3, "max_units": 0},
+        "bad_type": {"window_hours": 3, "max_units": "x"},
+        "bool": {"window_hours": 3, "max_units": True},
+        "notdict": 5,
+        7: {"window_hours": 3, "max_units": 1},
+    }
+    assert parse_model_limits(raw) == {
+        "gpt-5": ModelLimit(timedelta(hours=5), 100.0),
+        "o3": ModelLimit(timedelta(hours=3), 12.5),
+    }
+    assert parse_model_limits(None) == {}
+    assert parse_model_limits([1, 2]) == {}
+    assert parse_model_limits("x") == {}

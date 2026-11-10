@@ -151,6 +151,48 @@ def get_provider_state(conn: sqlite3.Connection, provider: str) -> dict:
     return dict(row)
 
 
+MAX_LIMIT_UNITS = 100000.0
+
+
+def get_provider_limits(conn: sqlite3.Connection, provider: str) -> dict[str, float]:
+    """Tetos manuais do provedor (5h e semanal) em unidades."""
+    state = get_provider_state(conn, provider)
+    return {
+        "window_5h_max_units": float(state["window_5h_max_units"]),
+        "weekly_max_units": float(state["weekly_max_units"]),
+    }
+
+
+def _check_limit(name: str, value) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} inválido: {value!r}")
+    try:
+        num = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name} inválido: {value!r}") from exc
+    if not (0 < num <= MAX_LIMIT_UNITS):  # também rejeita NaN
+        raise ValueError(f"{name} fora do intervalo (0, {MAX_LIMIT_UNITS:g}]: {value!r}")
+    return num
+
+
+def set_provider_limits(
+    conn: sqlite3.Connection,
+    provider: str,
+    *,
+    window_5h_max_units: float | None = None,
+    weekly_max_units: float | None = None,
+) -> None:
+    """Atualiza só os tetos informados. Valor <=0, >100000 ou não numérico -> ValueError."""
+    _check_provider(provider)
+    fields: dict[str, float] = {}
+    if window_5h_max_units is not None:
+        fields["window_5h_max_units"] = _check_limit("window_5h_max_units", window_5h_max_units)
+    if weekly_max_units is not None:
+        fields["weekly_max_units"] = _check_limit("weekly_max_units", weekly_max_units)
+    if fields:
+        update_provider_state(conn, provider, **fields)
+
+
 def update_provider_state(conn: sqlite3.Connection, provider: str, /, **fields) -> None:
     """Atualiza colunas permitidas de provider_state e updated_at."""
     _check_provider(provider)

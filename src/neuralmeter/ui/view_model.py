@@ -1,11 +1,13 @@
 """View-model puro do HUD (sem Qt): níveis de cor, countdown, dados por provedor, conexão."""
 
 import sqlite3
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
 
 from neuralmeter.engine import (
+    ModelLimit,
     WeeklyResult,
     WindowSnapshot,
     get_chatgpt_5h_snapshot,
@@ -87,9 +89,13 @@ def build_provider_view(
     )
 
 
-def load_hud_view(conn: sqlite3.Connection, now: datetime) -> dict[str, ProviderView]:
+def load_hud_view(
+    conn: sqlite3.Connection,
+    now: datetime,
+    chatgpt_limits: Mapping[str, ModelLimit] | None = None,
+) -> dict[str, ProviderView]:
     claude_5h = get_claude_5h_snapshot(conn, now)
-    chatgpt_5h = get_chatgpt_5h_snapshot(conn, now).aggregate
+    chatgpt_5h = get_chatgpt_5h_snapshot(conn, now, limits=chatgpt_limits).aggregate
     return {
         "claude": build_provider_view(
             "claude", claude_5h, get_weekly_snapshot(conn, "claude", now)

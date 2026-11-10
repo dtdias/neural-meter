@@ -2,9 +2,11 @@
 
 import json
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from neuralmeter.config import get_data_dir
+from neuralmeter.engine import ModelLimit
 
 DEFAULTS: dict = {"hud_pos": None, "opacity": 100, "compact": False, "click_through": False}
 
@@ -21,6 +23,26 @@ def clamp_opacity(v) -> int:
     except (TypeError, ValueError, OverflowError):
         return 100
     return max(20, min(100, n))
+
+
+def parse_model_limits(raw) -> dict[str, ModelLimit]:
+    """settings['chatgpt_model_limits'] -> {modelo_minusculo: ModelLimit}; invalidos ignorados."""
+    out: dict[str, ModelLimit] = {}
+    if not isinstance(raw, dict):
+        return out
+    for key, val in raw.items():
+        if not isinstance(key, str) or not key.strip() or not isinstance(val, dict):
+            continue
+        hours = val.get("window_hours")
+        units = val.get("max_units")
+        if isinstance(hours, bool) or hours not in (3, 5):
+            continue
+        if isinstance(units, bool) or not isinstance(units, int | float):
+            continue
+        if not (0 < units < float("inf")):
+            continue
+        out[key.strip().lower()] = ModelLimit(timedelta(hours=int(hours)), float(units))
+    return out
 
 
 def settings_path() -> Path:
