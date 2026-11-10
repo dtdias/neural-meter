@@ -120,3 +120,15 @@ def test_apply_conn_update_transitions():
     assert s.tabs == {"claude": False, "chatgpt": False} and conn_label(s) == "offline"
     assert apply_conn_update(s, "usage", {}) == s
     assert apply_conn_update(s, "status", {}) == s
+
+
+def test_load_hud_view_chatgpt_override(tmp_data_dir):
+    from neuralmeter.engine import DEFAULT_CHATGPT_LIMITS, ModelLimit
+
+    conn = connect_db()
+    insert_usage_event(conn, "chatgpt", "gpt-5", created_at=NOW - timedelta(minutes=10))
+    base = load_hud_view(conn, NOW)["chatgpt"].pct_5h
+    limits = {**DEFAULT_CHATGPT_LIMITS, "gpt-5": ModelLimit(timedelta(hours=3), 16)}
+    over = load_hud_view(conn, NOW, chatgpt_limits=limits)["chatgpt"].pct_5h
+    assert base > 0
+    assert over == pytest.approx(base * 10)

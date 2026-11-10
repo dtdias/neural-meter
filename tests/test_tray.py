@@ -49,3 +49,55 @@ def test_toggle_action_and_activation(qapp):
     tray.activated.emit(QSystemTrayIcon.ActivationReason.Trigger)
     assert hud.isVisible()
     hud.close()
+
+
+def test_menu_order(qapp):
+    tray = build_tray(HudWindow(), lambda: None)
+    items = [("-" if a.isSeparator() else a.text()) for a in tray.menu.actions()]
+    assert items == [
+        "Mostrar/Ocultar HUD",
+        "Modo compacto",
+        "Opacidade",
+        "Click-through",
+        "-",
+        "Configurar limites…",
+        "Iniciar com o Windows",
+        "-",
+        "Sair",
+    ]
+
+
+def test_autostart_toggle_and_revert(qapp, monkeypatch):
+    from neuralmeter.ui import tray as tray_mod
+
+    calls = []
+    monkeypatch.setattr(tray_mod, "is_autostart_enabled", lambda: False)
+    monkeypatch.setattr(tray_mod, "set_autostart", lambda v: calls.append(v) or True)
+    tray = build_tray(HudWindow(), lambda: None)
+    assert not tray.act_autostart.isChecked()
+    tray.act_autostart.setEnabled(True)
+    tray.act_autostart.trigger()
+    assert tray.act_autostart.isChecked()
+    assert calls == [True]
+    monkeypatch.setattr(tray_mod, "set_autostart", lambda v: calls.append(v) or False)
+    tray.act_autostart.trigger()  # tenta desligar, falha -> reverte
+    assert tray.act_autostart.isChecked()
+    assert calls == [True, False]
+
+
+def test_configure_limits_refreshes_hud(qapp, tmp_data_dir, monkeypatch):
+    from neuralmeter import db
+    from neuralmeter.ui import tray as tray_mod
+
+    hud = HudWindow()
+    refreshed, saved = [], []
+    monkeypatch.setattr(hud, "refresh", lambda: refreshed.append(1))
+    monkeypatch.setattr(tray_mod, "open_limits_dialog", lambda conn: True)
+    tray = build_tray(
+        hud, lambda: None, conn=db.connect_db(), on_limits_saved=lambda: saved.append(1)
+    )
+    tray.act_limits.trigger()
+    assert refreshed == [1] and saved == [1]
+    monkeypatch.setattr(tray_mod, "open_limits_dialog", lambda conn: False)
+    tray.act_limits.trigger()
+    assert refreshed == [1]

@@ -90,3 +90,52 @@ def test_naive_datetime_rejected(conn):
         db.insert_usage_event(conn, "claude", "x", created_at=naive)
     with pytest.raises(ValueError):
         db.get_events_since(conn, "claude", naive)
+
+
+def test_get_provider_limits_defaults(conn):
+    assert db.get_provider_limits(conn, "claude") == {
+        "window_5h_max_units": 45.0,
+        "weekly_max_units": 500.0,
+    }
+
+
+def test_set_provider_limits_partial(conn):
+    db.set_provider_limits(conn, "claude", window_5h_max_units=90)
+    assert db.get_provider_limits(conn, "claude") == {
+        "window_5h_max_units": 90.0,
+        "weekly_max_units": 500.0,
+    }
+    db.set_provider_limits(conn, "claude", weekly_max_units=1000.5)
+    assert db.get_provider_limits(conn, "claude")["weekly_max_units"] == 1000.5
+    assert db.get_provider_limits(conn, "chatgpt")["window_5h_max_units"] == 45.0
+
+
+@pytest.mark.parametrize("bad", [0, -1, 100001, "abc", None, float("nan"), True])
+def test_set_provider_limits_invalid(conn, bad):
+    if bad is None:  # None = "nao alterar"
+        db.set_provider_limits(conn, "claude", window_5h_max_units=None)
+        return
+    with pytest.raises(ValueError):
+        db.set_provider_limits(conn, "claude", window_5h_max_units=bad)
+    with pytest.raises(ValueError):
+        db.set_provider_limits(conn, "claude", weekly_max_units=bad)
+    assert db.get_provider_limits(conn, "claude")["window_5h_max_units"] == 45.0
+
+
+def test_set_provider_limits_unknown_provider(conn):
+    with pytest.raises(ValueError):
+        db.set_provider_limits(conn, "gemini", window_5h_max_units=10)
+    with pytest.raises(ValueError):
+        db.get_provider_limits(conn, "gemini")
+
+
+def test_claude_engine_reflects_new_limit(conn):
+    from neuralmeter.engine import get_claude_5h_snapshot
+
+    now = datetime(2026, 1, 1, 12, tzinfo=UTC)
+    db.insert_usage_event(conn, "claude", "sonnet", weight_units=9, created_at=now)
+    before = get_claude_5h_snapshot(conn, now).percent
+    db.set_provider_limits(conn, "claude", window_5h_max_units=90)
+    after = get_claude_5h_snapshot(conn, now).percent
+    assert before > 0
+    assert after == pytest.approx(before / 2)
