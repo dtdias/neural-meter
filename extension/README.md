@@ -14,3 +14,9 @@ LÃª passivamente o uso de claude.ai e chatgpt.com e envia ao app local via `ws:/
 
 ## Testes unitÃ¡rios
 `cd extension; npm test`
+
+## Captura passiva (claude.ai)
+- page_hook.js (MAIN world) envolve etch sem alterar request/resposta; ridge.js (ISOLATED) calcula contagens e envia usage/limit ao SW. Texto de prompt nunca sai da aba.
+- Formato de API do Claude e mapeamento de limites: PREMISSA em progress.md ("Decisões", 2026-11-10); calibrar com tráfego real.
+- Debug: no console da aba claude.ai, localStorage.neuralmeterDebug = "1" e recarregue; eventos/campos desconhecidos aparecem como console.debug("[NeuralMeter]", ...).
+- Após mudar a extensão, recarregue-a em chrome://extensions e a aba do claude.ai.
