@@ -10,6 +10,7 @@ from neuralmeter.db import connect_db
 from neuralmeter.server import start_ws_server
 from neuralmeter.ui.hud import HudWindow, UpdateBridge
 from neuralmeter.ui.settings import load_settings, save_settings
+from neuralmeter.ui.view_model import load_hud_view
 
 
 def run_app(argv: list[str] | None = None) -> int:
@@ -23,7 +24,8 @@ def run_app(argv: list[str] | None = None) -> int:
         settings["hud_pos"] = [x, y]
         save_settings(settings)
 
-    hud = HudWindow(on_moved=on_moved)
+    hud = HudWindow(on_moved=on_moved, view_loader=lambda now: load_hud_view(db, now))
+    hud.refresh()
     bridge.updated.connect(hud.on_update)
     hud.apply_saved_position(settings.get("hud_pos"))
 

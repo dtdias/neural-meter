@@ -66,6 +66,7 @@ class WsServer:
 
     async def _handler(self, ws):
         self._clients += 1
+        self._notify("conn", {"clients": self._clients})
         try:
             async for raw in ws:
                 try:
@@ -78,14 +79,20 @@ class WsServer:
                     log.exception("handler failure")
                     await ws.send(encode_reply("error", reason="internal error"))
                     continue
-                if update is not None and self._on_update is not None:
-                    try:
-                        self._on_update(*update)
-                    except Exception:
-                        log.exception("on_update failed")
+                if update is not None:
+                    self._notify(*update)
                 await ws.send(json_reply(reply))
         finally:
             self._clients -= 1
+            self._notify("conn", {"clients": self._clients})
+
+    def _notify(self, kind: str, payload: dict) -> None:
+        if self._on_update is None:
+            return
+        try:
+            self._on_update(kind, payload)
+        except Exception:
+            log.exception("on_update failed")
 
     async def _main(self):
         self._stop = asyncio.Event()

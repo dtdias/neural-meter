@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 from datetime import UTC, datetime
 
 import pytest
@@ -16,11 +17,22 @@ def conn(tmp_path, monkeypatch):
     return connect_db()
 
 
+class _NonConn:
+    """Vista das atualizações sem os eventos internos `conn`."""
+
+    def __init__(self, updates):
+        self._u = updates
+
+    def __getitem__(self, i):
+        return [u for u in self._u if u[0] != "conn"][i]
+
+
 @pytest.fixture
 def server(conn):
     updates = []
     s = start_ws_server(conn, port=0, on_update=lambda k, p: updates.append((k, p)))
-    s.updates = updates
+    s.all_updates = updates
+    s.updates = _NonConn(updates)
     yield s
     s.stop()
 
@@ -135,3 +147,18 @@ def test_stop_ends_thread(conn):
 def test_non_loopback_host(conn):
     with pytest.raises(ValueError):
         WsServer(conn, host="0.0.0.0")
+
+
+def test_conn_events_open_and_close(server):
+    async def go():
+        async with connect(url(server)) as ws:
+            await ws.send(json.dumps({"type": "ping"}))
+            await ws.recv()
+
+    run(go())
+    deadline = time.time() + 2
+    while len([u for u in server.all_updates if u[0] == "conn"]) < 2:
+        assert time.time() < deadline
+        time.sleep(0.01)
+    conns = [p["clients"] for k, p in server.all_updates if k == "conn"]
+    assert conns[:2] == [1, 0]
