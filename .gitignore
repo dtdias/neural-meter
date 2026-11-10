@@ -1,0 +1,20 @@
+# OpenCode / graphify: nunca entram em commit
+graphify-out/
+opencode.json
+opencode.jsonc
+.opencode/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+*.spec.bak
+
+# Dados locais / capturas de rede (podem conter tokens e prompts)
+*.db
+*.sqlite
+*.har
