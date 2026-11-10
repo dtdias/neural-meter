@@ -1,6 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { sanitizeBridgeMessage as s } from "../src/bridge_msg.js";
+import { sanitizeBridgeMessage as s, providerMatchesSender as pms } from "../src/bridge_msg.js";
+
+test("providerMatchesSender", () => {
+  assert.equal(pms("claude", "https://claude.ai/chat/1"), true);
+  assert.equal(pms("chatgpt", "https://chatgpt.com/c/1"), true);
+  assert.equal(pms("claude", "https://chatgpt.com/c/1"), false);
+  assert.equal(pms("chatgpt", "https://claude.ai/"), false);
+  assert.equal(pms("chatgpt", "https://chatgpt.com.evil.io/"), false);
+  assert.equal(pms("chatgpt", "http://chatgpt.com/"), false);
+  assert.equal(pms("x", "https://chatgpt.com/"), false);
+  assert.equal(pms("chatgpt", undefined), false);
+});
 
 const usage = { provider: "claude", model: "m", conversation_id: "c", prompt_chars: 3, context_chars: 5, ts: 1 };
 
