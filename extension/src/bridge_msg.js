@@ -3,6 +3,19 @@ const PROVIDERS = new Set(["claude", "chatgpt"]);
 const isStr = (v, max) => typeof v === "string" && v.length > 0 && v.length <= max;
 const isCount = (v) => Number.isInteger(v) && v >= 0;
 
+const PROVIDER_HOSTS = { claude: "claude.ai", chatgpt: "chatgpt.com" };
+
+export function providerMatchesSender(provider, url) {
+  try {
+    const host = PROVIDER_HOSTS[provider];
+    if (!host || typeof url !== "string") return false;
+    const u = new URL(url);
+    return u.protocol === "https:" && u.hostname === host;
+  } catch {
+    return false;
+  }
+}
+
 export function sanitizeBridgeMessage(msg) {
   try {
     if (!msg || typeof msg !== "object") return null;

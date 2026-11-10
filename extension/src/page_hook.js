@@ -1,4 +1,4 @@
-// MAIN world, classic. Sem lógica de domínio: só repassa dados crus via postMessage.
+// MAIN world, classic. Sem logica de dominio: so repassa dados crus via postMessage.
 (function () {
   if (window.__nmHooked) return;
   window.__nmHooked = true;
@@ -9,6 +9,16 @@
       o.__nm = 1;
       window.postMessage(o, "*");
     } catch (e) {}
+  };
+
+  const matchers = {
+    "claude.ai": /\/completion$/,
+    "chatgpt.com": /\/backend-api\/(f\/)?conversation(\?|$)/,
+  };
+  const rx = matchers[location.hostname];
+  const wanted = (url) => {
+    if (!rx) return false;
+    return rx.test(rx === matchers["claude.ai"] ? url.split("?")[0].split("#")[0] : url);
   };
 
   async function pump(id, resp) {
@@ -34,8 +44,9 @@
   window.fetch = function (input, init) {
     const p = orig.apply(this, arguments);
     try {
+      // input Request sem init: ignora (nao le body, evita consumir stream)
       const url = typeof input === "string" ? input : (input && input.url) || String(input);
-      if (url.indexOf("/completion") !== -1 && init && typeof init.body === "string") {
+      if (init && typeof init.body === "string" && wanted(url)) {
         const id = "r" + ++seq;
         post({ k: "req", id, url, method: init.method || "GET", body: init.body });
         p.then((resp) => pump(id, resp), () => {});

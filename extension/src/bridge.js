@@ -1,6 +1,11 @@
-// ISOLATED world, classic. Recebe dados crus do page_hook, usa lógica pura, envia ao SW.
+// ISOLATED world, classic. Recebe dados crus do page_hook, usa logica pura, envia ao SW.
 (function () {
-  if (location.hostname !== "claude.ai") return; // chatgpt: próxima etapa
+  const MODULES = {
+    "claude.ai": ["src/claude_capture.js", "createClaudeCapture"],
+    "chatgpt.com": ["src/chatgpt_capture.js", "createChatgptCapture"],
+  };
+  const target = MODULES[location.hostname];
+  if (!target) return;
   const debug = (() => {
     try {
       return localStorage.neuralmeterDebug === "1";
@@ -40,10 +45,10 @@
     try {
       const url = (p) => chrome.runtime.getURL(p);
       const [cap, trk] = await Promise.all([
-        import(url("src/claude_capture.js")),
+        import(url(target[0])),
         import(url("src/context_tracker.js")),
       ]);
-      capture = cap.createClaudeCapture({
+      capture = cap[target[1]]({
         emit,
         tracker: trk.createContextTracker({ max: 50 }),
         onUnknown,

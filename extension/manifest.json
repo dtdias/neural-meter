@@ -12,20 +12,20 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://claude.ai/*"],
+      "matches": ["https://claude.ai/*", "https://chatgpt.com/*"],
       "js": ["src/page_hook.js"],
       "world": "MAIN",
       "run_at": "document_start"
     },
     {
-      "matches": ["https://claude.ai/*"],
+      "matches": ["https://claude.ai/*", "https://chatgpt.com/*"],
       "js": ["src/bridge.js"],
       "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/sse.js", "src/context_tracker.js", "src/claude_capture.js"],
+      "resources": ["src/sse.js", "src/context_tracker.js", "src/claude_capture.js", "src/chatgpt_capture.js"],
       "matches": ["https://claude.ai/*", "https://chatgpt.com/*"]
     }
   ]
