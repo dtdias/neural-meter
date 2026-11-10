@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "NeuralMeter Bridge",
+  "version": "0.1.0",
+  "description": "Leitura passiva de uso de claude.ai e chatgpt.com para o NeuralMeter (local).",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "NeuralMeter Bridge",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
+  "permissions": ["alarms"],
+  "host_permissions": ["https://claude.ai/*", "https://chatgpt.com/*"],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://claude.ai/*", "https://chatgpt.com/*"],
+      "js": ["src/page_hook.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://claude.ai/*", "https://chatgpt.com/*"],
+      "js": ["src/bridge.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/sse.js", "src/context_tracker.js", "src/claude_capture.js", "src/chatgpt_capture.js"],
+      "matches": ["https://claude.ai/*", "https://chatgpt.com/*"]
+    }
+  ]
+}
