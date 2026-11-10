@@ -2,6 +2,8 @@
 
 Lê passivamente o uso de claude.ai e chatgpt.com e envia ao app local via `ws://127.0.0.1:8765`.
 
+Para usuarios finais: use o zip `NeuralMeter-Bridge-<versao>.zip` (gerado por `scripts/build_installer.py`; ver README raiz, secao Instalacao).
+
 ## Carregar sem empacotar
 1. Abra `chrome://extensions` (ou `edge://extensions`), ative **Modo do desenvolvedor**.
 2. **Carregar sem compactação** → selecione esta pasta `extension/`.
