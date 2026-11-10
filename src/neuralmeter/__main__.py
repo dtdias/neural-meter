@@ -7,7 +7,19 @@ from neuralmeter.config import WS_HOST, WS_PORT, get_db_path
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    print(f"NeuralMeter {__version__} - ws://{WS_HOST}:{WS_PORT} - db={get_db_path()}")
+    if "--self-test" in argv:
+        from pathlib import Path
+
+        from neuralmeter.selftest import run_self_test
+
+        out = None
+        if "--self-test-out" in argv:
+            idx = argv.index("--self-test-out")
+            if idx + 1 < len(argv):
+                out = Path(argv[idx + 1])
+        return run_self_test(out)
+    if sys.stdout is not None:
+        print(f"NeuralMeter {__version__} - ws://{WS_HOST}:{WS_PORT} - db={get_db_path()}")
     if "--server-only" in argv:
         from datetime import UTC, datetime
 
