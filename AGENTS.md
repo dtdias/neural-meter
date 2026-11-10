@@ -39,6 +39,7 @@
 - Desempenho (RNF01/02): `uv run python scripts/perf_check.py [--json] [--report-only]` (porta 8765 livre; ~45 s). Teste perf: `uv run pytest -m perf -q` (fora do run padrão).
 - Gerar ícones (PNG/ICO a partir de assets/logo.svg): `uv run python scripts/build_icons.py`
 - Build exe: `uv run python scripts/build_exe.py --smoke` (gera `dist/NeuralMeter.exe`; `--self-test` = smoke sem UI)
+- Build installer: `uv run python scripts/build_installer.py [--skip-exe]` (gera `dist/NeuralMeter-Setup-<v>.exe` via Inno Setup 6 + `dist/NeuralMeter-Bridge-<v>.zip`; ISCC ausente → exit 2 e dica winget)
 - Console Windows: se `—` falhar na saída, definir `$env:PYTHONIOENCODING="utf-8"`.
 
 ## Restrições do produto que agentes erram
