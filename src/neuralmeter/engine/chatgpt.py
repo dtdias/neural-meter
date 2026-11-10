@@ -9,6 +9,7 @@ from neuralmeter.db import from_db_ts, get_events_since, get_provider_state
 from neuralmeter.engine.window import (
     WindowSnapshot,
     calc_percent,
+    match_model_key,
     sync_official_reset,
     weight,
 )
@@ -41,13 +42,7 @@ DEFAULT_CHATGPT_LIMITS: dict[str, ModelLimit] = {
 
 
 def _match_key(model_name: str, limits: Mapping[str, ModelLimit]) -> str | None:
-    name = model_name.lower()
-    best: str | None = None
-    for key in limits:
-        k = key.lower()
-        if name.startswith(k) and (best is None or len(k) > len(best)):
-            best = key
-    return best
+    return match_model_key(model_name, limits)
 
 
 def resolve_model_limit(

@@ -1,13 +1,25 @@
 """Tipos e helpers comuns aos motores de janela."""
 
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from neuralmeter.db import to_db_ts, update_provider_state
 
 WINDOW_5H = timedelta(hours=5)
+WINDOW_7D = timedelta(days=7)
+
+
+def match_model_key(model_name: str, keys: Iterable[str]) -> str | None:
+    """Chave de prefixo mais longo que casa com o modelo (sem diferenciar maiúsculas)."""
+    name = model_name.lower()
+    best: str | None = None
+    for key in keys:
+        k = key.lower()
+        if name.startswith(k) and (best is None or len(k) > len(best.lower())):
+            best = key
+    return best
 
 
 @dataclass(frozen=True)
