@@ -60,6 +60,7 @@ def test_menu_order(qapp):
         "Opacidade",
         "Click-through",
         "-",
+        "Avisar renovação 5h",
         "Configurar limites…",
         "Iniciar com o Windows",
         "-",
@@ -101,3 +102,32 @@ def test_configure_limits_refreshes_hud(qapp, tmp_data_dir, monkeypatch):
     monkeypatch.setattr(tray_mod, "open_limits_dialog", lambda conn: False)
     tray.act_limits.trigger()
     assert refreshed == [1]
+
+
+def test_notify_renewal_toggle(qapp, monkeypatch):
+    from PySide6.QtWidgets import QSystemTrayIcon
+
+    shown, saved = [], []
+    monkeypatch.setattr(QSystemTrayIcon, "isSystemTrayAvailable", staticmethod(lambda: True))
+    monkeypatch.setattr(QSystemTrayIcon, "showMessage", lambda self, *a, **k: shown.append(a))
+    tray = build_tray(HudWindow(), lambda: None, on_notify_changed=saved.append)
+    assert tray.act_notify.isChecked()
+    tray.notify_renewal("claude")
+    assert len(shown) == 1 and "Claude" in shown[0][1]
+    tray.act_notify.trigger()
+    assert saved == [False]
+    tray.notify_renewal("claude")
+    assert len(shown) == 1
+
+
+def test_hud_renewed_signal_reaches_tray(qapp, monkeypatch):
+    from PySide6.QtWidgets import QSystemTrayIcon
+
+    shown = []
+    monkeypatch.setattr(QSystemTrayIcon, "isSystemTrayAvailable", staticmethod(lambda: True))
+    monkeypatch.setattr(QSystemTrayIcon, "showMessage", lambda self, *a, **k: shown.append(a))
+    hud = HudWindow()
+    tray = build_tray(hud, lambda: None)
+    hud.renewed.emit("chatgpt")
+    assert tray is not None
+    assert len(shown) == 1 and "ChatGPT" in shown[0][1]

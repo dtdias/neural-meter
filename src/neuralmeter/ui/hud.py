@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from neuralmeter.ui.renewal import RenewalTracker
 from neuralmeter.ui.settings import clamp_opacity
 from neuralmeter.ui.snap import anchor_resize, clamp_to_screens, pick_screen, snap_to_edges
 from neuralmeter.ui.view_model import (
@@ -167,6 +168,7 @@ class HudWindow(QWidget):
     opacity_changed = Signal(int)
     click_through_changed = Signal(bool)
     compact_changed = Signal(bool)
+    renewed = Signal(str)
 
     def __init__(
         self,
@@ -185,6 +187,7 @@ class HudWindow(QWidget):
         self._drag_offset: QPoint | None = None
         self._views: dict[str, ProviderView] = {}
         self._conn = ConnState()
+        self._renewal = RenewalTracker()
         self.compact = compact
         self.on_compact_changed = on_compact_changed
         self._hover_expanded = False
@@ -262,18 +265,34 @@ class HudWindow(QWidget):
                 row.render(view, now)
                 self.compact_rows[provider].render(view)
 
-    def refresh(self) -> None:
-        """Recarrega o view-model (lê DB) e re-renderiza."""
+    def _reload(self) -> datetime:
         now = self._clock()
         try:
             self._views = self._view_loader(now)
         except Exception:
             log.exception("view_loader failed")
         self._render(now)
+        return now
+
+    def _emit_due(self, now: datetime) -> bool:
+        providers = self._renewal.due(now)
+        for p in providers:
+            self.renewed.emit(p)
+        return bool(providers)
+
+    def refresh(self) -> None:
+        """Recarrega o view-model (lê DB), re-renderiza e avisa renovações."""
+        now = self._reload()
+        self._renewal.observe(self._views)
+        if self._emit_due(now):
+            self._reload()  # snapshot pos-reset; due ja foi consumido
 
     def tick(self) -> None:
-        """Só re-renderiza countdowns com o relógio atual (sem DB)."""
-        self._render(self._clock())
+        """Re-renderiza countdowns com o relógio atual; dispara renovação vencida."""
+        now = self._clock()
+        self._render(now)
+        if self._emit_due(now):
+            self._reload()
 
     @Slot(str, dict)
     def on_update(self, kind: str, payload: dict) -> None:
