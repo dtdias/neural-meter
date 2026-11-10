@@ -10,6 +10,7 @@ Objetivo final: `prd.md`.
 - 2026-11-10 — Ferramentas Python: pytest (testes), ruff (lint+format, line-length 100). Deps runtime: `PySide6`, `websockets`. Sem pytest-asyncio por ora (testes de WS usam `asyncio.run`).
 - 2026-11-10 — Extensão: JavaScript puro ES modules, sem bundler/TS (menos build, MV3 aceita direto); testes via `node --test` (Node 26). Navegadores alvo: Chromium (Chrome/Edge/Brave/Opera); Firefox fora do v1.0.
 - 2026-11-10 — Dados locais em `%LOCALAPPDATA%\NeuralMeter\neuralmeter.db` (override por env `NEURALMETER_DATA_DIR`, usado nos testes).
+- 2026-11-10 — DB: timestamps gravados em UTC, texto `YYYY-MM-DD HH:MM:SS` (mesmo formato de `CURRENT_TIMESTAMP`, comparável lexicograficamente); Python sempre passa `created_at` explícito. Migração via `PRAGMA user_version` (v1 = schema §6). WAL + `check_same_thread=False` + `threading.Lock` (WS thread e UI thread compartilham). Seed `provider_state` para `claude` e `chatgpt` com defaults §6.
 
 ## Fase 0 — Setup
 - [x] 2026-11-09 — AGENTS.md e progress.md criados.
@@ -18,10 +19,10 @@ Objetivo final: `prd.md`.
 - [x] 2026-11-10 — graphify update . ok (77 nós). Construir grafo graphify inicial (`/graphify .`) quando houver código.
 
 ## Fase 1 — Core e Extensão (MVP funcional)
-- [ ] SQLite: schema `usage_events` / `provider_state` / índice (PRD §6) + migração inicial.
+- [x] 2026-11-10 — `src/neuralmeter/db.py` + `tests/test_db.py`. SQLite: schema `usage_events` / `provider_state` / índice (PRD §6) + migração inicial.
 - [ ] Motor janela 5h — Claude: ciclo a partir da 1ª msg + sync reset oficial (RF01.2).
 - [ ] Motor janela 5h — ChatGPT: expiração individual por modelo, 3h/5h configurável (RF01.4).
-- [ ] Registro de timestamp por mensagem (RF01.1).
+- [x] 2026-11-10 — `insert_usage_event` grava UTC. Registro de timestamp por mensagem (RF01.1).
 - [ ] Motor semanal 7 dias: cotas por modelo, histórico rolante, reset semanal (RF02.1–RF02.3).
 - [ ] Servidor WebSocket local `127.0.0.1:8765` em thread de background.
 - [ ] Extensão MV3: conexão automática ao WS + status online/aguardando aba.
