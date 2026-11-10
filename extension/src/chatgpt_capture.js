@@ -134,11 +134,19 @@ export function createChatgptCapture({ emit, tracker, onUnknown = () => {}, now 
       payload.context_chars = ctx;
       payload.ts = now();
       emit({ nm: "usage", payload });
-      pending.set(id, { conv, promptChars, respChars: 0, sse: createSseParser() });
+      pending.set(id, {
+        conv,
+        promptChars,
+        respChars: 0,
+        sse: createSseParser(),
+        model: model === "gpt-unknown" ? null : model,
+      });
     },
 
     onResponse(id, status, bodyText) {
       if (typeof status !== "number" || status < 400) return;
+      const req = pending.get(id);
+      const reqModel = req ? req.model : null;
       pending.delete(id);
       let detail = null;
       try {
@@ -156,10 +164,9 @@ export function createChatgptCapture({ emit, tracker, onUnknown = () => {}, now 
         else reset_at = toResetMs(detail.reset_at);
       }
       if (reset_at) {
-        emit({
-          nm: "limit",
-          payload: { provider: "chatgpt", scope: "5h", reset_at, rate_limited: true },
-        });
+        const payload = { provider: "chatgpt", scope: "5h", reset_at, rate_limited: true };
+        if (reqModel) payload.model = reqModel;
+        emit({ nm: "limit", payload });
       } else {
         onUnknown("rate_limit_body", {});
       }

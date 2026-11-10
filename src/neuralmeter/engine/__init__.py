@@ -1,5 +1,11 @@
 """Motores de janela de uso."""
 
+from neuralmeter.engine.calibration import (
+    apply_block_calibration,
+    calibrate_ceiling,
+    calibrated_chatgpt_limits,
+    is_new_block,
+)
 from neuralmeter.engine.chatgpt import (
     DEFAULT_CHATGPT_LIMITS,
     ChatGPT5hResult,
@@ -41,7 +47,10 @@ __all__ = [
     "WeeklyQuota",
     "WeeklyResult",
     "WindowSnapshot",
+    "apply_block_calibration",
     "calc_percent",
+    "calibrate_ceiling",
+    "calibrated_chatgpt_limits",
     "compute_chatgpt_5h",
     "compute_claude_5h",
     "compute_weekly",
@@ -49,6 +58,7 @@ __all__ = [
     "get_chatgpt_5h_snapshot",
     "get_claude_5h_snapshot",
     "get_weekly_snapshot",
+    "is_new_block",
     "match_model_key",
     "resolve_model_limit",
     "sync_chatgpt_official_reset",

@@ -7,9 +7,21 @@ from pathlib import Path
 
 from neuralmeter import config
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 PROVIDERS = ("claude", "chatgpt")
 TS_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+# v2 (aditiva): tetos calibrados por modelo (auto-calibração RF04.2).
+SCHEMA_V2 = """
+CREATE TABLE IF NOT EXISTS model_limits (
+    provider TEXT NOT NULL,
+    model_key TEXT NOT NULL,
+    window_hours REAL NOT NULL,
+    max_units REAL NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (provider, model_key)
+);
+"""
 
 SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS usage_events (
@@ -87,6 +99,9 @@ def migrate(conn: sqlite3.Connection) -> None:
                 "INSERT OR IGNORE INTO provider_state (provider) VALUES (?)",
                 [(p,) for p in PROVIDERS],
             )
+        if version < 2:
+            conn.executescript(SCHEMA_V2)
+        if version < SCHEMA_VERSION:
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             conn.commit()
 
@@ -191,6 +206,48 @@ def set_provider_limits(
         fields["weekly_max_units"] = _check_limit("weekly_max_units", weekly_max_units)
     if fields:
         update_provider_state(conn, provider, **fields)
+
+
+def get_model_limits(conn: sqlite3.Connection, provider: str) -> dict[str, dict]:
+    """Tetos calibrados por modelo: {model_key: {window_hours, max_units, updated_at}}."""
+    _check_provider(provider)
+    rows = conn.execute(
+        "SELECT model_key, window_hours, max_units, updated_at FROM model_limits "
+        "WHERE provider = ?",
+        (provider,),
+    ).fetchall()
+    return {
+        r["model_key"]: {
+            "window_hours": float(r["window_hours"]),
+            "max_units": float(r["max_units"]),
+            "updated_at": r["updated_at"],
+        }
+        for r in rows
+    }
+
+
+def set_model_limit(
+    conn: sqlite3.Connection,
+    provider: str,
+    model_key: str,
+    window_hours: float,
+    max_units: float,
+) -> None:
+    """Upsert do teto calibrado de um modelo. max_units fora de (0, 100000] -> ValueError."""
+    _check_provider(provider)
+    if not isinstance(model_key, str) or not model_key:
+        raise ValueError(f"model_key inválido: {model_key!r}")
+    hours = _check_limit("window_hours", window_hours)
+    units = _check_limit("max_units", max_units)
+    with _write_lock:
+        conn.execute(
+            "INSERT INTO model_limits (provider, model_key, window_hours, max_units, updated_at) "
+            "VALUES (?, ?, ?, ?, ?) ON CONFLICT(provider, model_key) DO UPDATE SET "
+            "window_hours = excluded.window_hours, max_units = excluded.max_units, "
+            "updated_at = excluded.updated_at",
+            (provider, model_key, hours, units, utc_now_str()),
+        )
+        conn.commit()
 
 
 def update_provider_state(conn: sqlite3.Connection, provider: str, /, **fields) -> None:

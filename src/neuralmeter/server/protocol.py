@@ -48,6 +48,7 @@ class Limit:
     scope: str
     reset_at: datetime
     rate_limited: bool | None
+    model: str | None = None
 
 
 @dataclass(frozen=True)
@@ -139,11 +140,17 @@ def parse_message(raw: str | bytes, now: datetime):
         rl = d.get("rate_limited")
         if rl is not None and not isinstance(rl, bool):
             raise ProtocolError("invalid rate_limited")
+        model = d.get("model")
+        if model is not None and (
+            not isinstance(model, str) or not model or len(model) > MAX_MODEL_LEN
+        ):
+            raise ProtocolError("invalid model")
         return Limit(
             provider=provider,
             scope=scope,
             reset_at=_epoch_ms(d.get("reset_at"), "reset_at"),
             rate_limited=rl,
+            model=model,
         )
     raise ProtocolError("unknown type")
 

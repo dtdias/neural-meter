@@ -119,6 +119,16 @@ test("429 clears_in", () => {
   });
 });
 
+test("429 inclui model da requisicao; auto/ausente omite", () => {
+  const { out, cap } = setup();
+  cap.onRequest("1", URL1, "POST", body({ model: "o3" }));
+  cap.onResponse("1", 429, JSON.stringify({ detail: { code: "model_cap_exceeded", clears_in: 60 } }));
+  cap.onRequest("2", URL1, "POST", body({ model: "auto" }));
+  cap.onResponse("2", 429, JSON.stringify({ detail: { code: "model_cap_exceeded", clears_in: 60 } }));
+  assert.equal(out[1].payload.model, "o3");
+  assert.equal("model" in out[3].payload, false);
+});
+
 test("reset_at ISO e numerico", () => {
   const { out, cap } = setup();
   const iso = "2030-01-01T00:00:00Z";
