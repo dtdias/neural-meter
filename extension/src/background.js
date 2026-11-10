@@ -1,3 +1,4 @@
+import { sanitizeBridgeMessage } from "./bridge_msg.js";
 import { WS_URL } from "./constants.js";
 import { computeTabsStatus } from "./tabs_status.js";
 import { createWsClient } from "./ws_client.js";
@@ -58,6 +59,13 @@ chrome.runtime.onInstalled.addListener(scheduleRefresh);
 chrome.alarms.create("nm-keepalive", { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "nm-keepalive" && client.state === "offline") client.start();
+});
+
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  const u = (sender && sender.tab && sender.tab.url) || "";
+  if (!u.startsWith("https://claude.ai/") && !u.startsWith("https://chatgpt.com/")) return;
+  const m = sanitizeBridgeMessage(msg);
+  if (m) client.send(m);
 });
 
 globalThis.nmSend = client.send;
