@@ -35,6 +35,7 @@
 - Lint: `uv run ruff check .`
 - Format: `uv run ruff format .`
 - Testes da extensão: `cd extension; npm test`
+- Só servidor WS (sem UI): `uv run neuralmeter --server-only` (Ctrl+C p/ parar)
 - Build: a definir (Fase 3)
 - Console Windows: se `—` falhar na saída, definir `$env:PYTHONIOENCODING="utf-8"`.
 
