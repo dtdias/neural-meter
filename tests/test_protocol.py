@@ -92,6 +92,15 @@ def test_limit_utc():
     assert m.rate_limited is True
 
 
+def test_limit_model_optional():
+    base = {"type": "limit", "provider": "chatgpt", "scope": "5h", "reset_at": ms(NOW)}
+    assert parse_message(json.dumps(base), NOW).model is None
+    assert parse_message(json.dumps({**base, "model": "o3"}), NOW).model == "o3"
+    for bad in (5, "", "x" * 101, ["o3"], True):
+        with pytest.raises(ProtocolError):
+            parse_message(json.dumps({**base, "model": bad}), NOW)
+
+
 def test_extra_keys_and_text_ignored():
     m = parse_message(usage(prompt="secret", text="secret", extra=1), NOW)
     assert isinstance(m, Usage)

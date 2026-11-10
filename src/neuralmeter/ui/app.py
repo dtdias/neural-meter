@@ -7,7 +7,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from neuralmeter.db import connect_db
-from neuralmeter.engine import DEFAULT_CHATGPT_LIMITS
+from neuralmeter.engine import DEFAULT_CHATGPT_LIMITS, calibrated_chatgpt_limits
 from neuralmeter.server import start_ws_server
 from neuralmeter.ui.hud import HudWindow, UpdateBridge
 from neuralmeter.ui.settings import (
@@ -46,6 +46,7 @@ def run_app(argv: list[str] | None = None) -> int:
     def model_limits() -> dict:
         return {
             **DEFAULT_CHATGPT_LIMITS,
+            **calibrated_chatgpt_limits(db),
             **parse_model_limits(settings.get("chatgpt_model_limits")),
         }
 

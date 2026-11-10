@@ -1,9 +1,12 @@
 """Aplica mensagens validadas no SQLite e produz resposta + notificação de UI."""
 
 import sqlite3
+from datetime import UTC, datetime
 
-from neuralmeter.db import insert_usage_event
+from neuralmeter.db import get_provider_state, insert_usage_event
 from neuralmeter.engine import (
+    apply_block_calibration,
+    is_new_block,
     sync_chatgpt_official_reset,
     sync_claude_official_reset,
     sync_weekly_reset,
@@ -29,12 +32,18 @@ def handle_message(conn: sqlite3.Connection, msg) -> tuple[dict, tuple[str, dict
         update = ("usage", {"provider": msg.provider, "model": msg.model})
         return {"type": "ack", "ref": "usage"}, update
     if isinstance(msg, Limit):
+        prev_state = get_provider_state(conn, msg.provider)
         if msg.scope == "weekly":
             sync_weekly_reset(conn, msg.provider, msg.reset_at, msg.rate_limited)
         elif msg.provider == "claude":
             sync_claude_official_reset(conn, msg.reset_at, msg.rate_limited)
         else:
             sync_chatgpt_official_reset(conn, msg.reset_at, msg.rate_limited)
+        calibrated = None
+        if msg.rate_limited and is_new_block(prev_state, msg.scope, msg.reset_at):
+            calibrated = apply_block_calibration(
+                conn, msg.provider, msg.scope, msg.model, prev_state, datetime.now(UTC)
+            )
         update = (
             "limit",
             {
@@ -42,6 +51,7 @@ def handle_message(conn: sqlite3.Connection, msg) -> tuple[dict, tuple[str, dict
                 "scope": msg.scope,
                 "reset_at": msg.reset_at,
                 "rate_limited": msg.rate_limited,
+                "calibrated": calibrated,
             },
         )
         return {"type": "ack", "ref": "limit"}, update

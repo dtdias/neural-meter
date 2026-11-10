@@ -16,7 +16,41 @@ def conn(tmp_path, monkeypatch):
 def test_schema_objects_and_version(conn):
     names = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master")}
     assert {"usage_events", "provider_state", "idx_usage_provider_time"} <= names
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert "model_limits" in names
+
+
+def test_migrate_v1_to_v2_existing_db(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    raw = sqlite3.connect(path)
+    raw.executescript(db.SCHEMA_V1)
+    raw.execute("INSERT INTO provider_state (provider) VALUES ('claude')")
+    raw.execute("INSERT INTO usage_events (provider, model_name) VALUES ('claude', 'm')")
+    raw.execute("PRAGMA user_version = 1")
+    raw.commit()
+    raw.close()
+    c = db.connect_db(path)
+    assert c.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert c.execute("SELECT COUNT(*) FROM usage_events").fetchone()[0] == 1
+    assert db.get_model_limits(c, "chatgpt") == {}
+    c.close()
+
+
+def test_set_model_limit_upsert_and_validation(conn):
+    db.set_model_limit(conn, "chatgpt", "o3", 5, 30)
+    db.set_model_limit(conn, "chatgpt", "o3", 3, 42.5)
+    lims = db.get_model_limits(conn, "chatgpt")
+    assert list(lims) == ["o3"]
+    assert lims["o3"]["window_hours"] == 3.0
+    assert lims["o3"]["max_units"] == 42.5
+    assert db.get_model_limits(conn, "claude") == {}
+    for bad in (0, -1, 100001, float("nan"), "x", True):
+        with pytest.raises(ValueError):
+            db.set_model_limit(conn, "chatgpt", "o3", 5, bad)
+    with pytest.raises(ValueError):
+        db.set_model_limit(conn, "other", "o3", 5, 10)
 
 
 def test_migrate_idempotent(conn):

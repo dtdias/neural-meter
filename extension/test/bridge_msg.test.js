@@ -26,6 +26,14 @@ test("usage inválido", () => {
   assert.equal(s({ nm: "usage", payload: { ...usage, model: "x".repeat(101) } }), null);
 });
 
+test("limit model opcional: válido passa, inválido só descarta o campo", () => {
+  const l = { provider: "chatgpt", scope: "5h", reset_at: 5, rate_limited: true };
+  assert.deepEqual(s({ nm: "limit", payload: { ...l, model: "o3" } }), { type: "limit", ...l, model: "o3" });
+  assert.deepEqual(s({ nm: "limit", payload: { ...l, model: 5 } }), { type: "limit", ...l });
+  assert.deepEqual(s({ nm: "limit", payload: { ...l, model: "" } }), { type: "limit", ...l });
+  assert.deepEqual(s({ nm: "limit", payload: { ...l, model: "x".repeat(101) } }), { type: "limit", ...l });
+});
+
 test("limit válido e inválido", () => {
   const l = { provider: "chatgpt", scope: "weekly", reset_at: 5, rate_limited: true };
   assert.deepEqual(s({ nm: "limit", payload: { ...l, extra: 1 } }), { type: "limit", ...l });

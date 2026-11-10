@@ -48,6 +48,7 @@ export function sanitizeBridgeMessage(msg) {
         if (typeof p.rate_limited !== "boolean") return null;
         out.rate_limited = p.rate_limited;
       }
+      if (isStr(p.model, 100)) out.model = p.model; // inválido: só descarta o campo
       return out;
     }
     return null;
