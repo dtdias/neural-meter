@@ -166,3 +166,62 @@ def test_apply_saved_position_none_inside_screen(qapp):
     g = QGuiApplication.screens()[0].availableGeometry()
     assert g.contains(hud.x(), hud.y())
     assert hud.x() + hud.width() <= g.x() + g.width()
+
+
+def test_set_opacity_clamps_and_signals(qapp):
+    hud = HudWindow()
+    seen = []
+    hud.opacity_changed.connect(seen.append)
+    hud.set_opacity(50)
+    assert abs(hud.windowOpacity() - 0.5) < 0.02
+    hud.set_opacity(50)
+    assert seen == [50]
+    hud.set_opacity(10)
+    assert abs(hud.windowOpacity() - 0.2) < 0.02
+    assert seen == [50, 20]
+
+
+def test_initial_opacity_and_click_through(qapp):
+    hud = HudWindow(opacity=40, click_through=True)
+    assert abs(hud.windowOpacity() - 0.4) < 0.02
+    assert hud.windowFlags() & Qt.WindowType.WindowTransparentForInput
+
+
+def test_set_click_through_flags_pos_signal(qapp):
+    hud = HudWindow()
+    hud.show()
+    hud.move(123, 77)
+    pos = hud.pos()
+    seen = []
+    hud.click_through_changed.connect(seen.append)
+    hud.set_click_through(True)
+    keep = (
+        Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool
+    )
+    assert hud.windowFlags() & Qt.WindowType.WindowTransparentForInput
+    assert hud.windowFlags() & keep == keep
+    assert hud.pos() == pos
+    hud.set_click_through(True)
+    hud.set_click_through(False)
+    assert not hud.windowFlags() & Qt.WindowType.WindowTransparentForInput
+    assert hud.pos() == pos
+    assert seen == [True, False]
+    hud.close()
+
+
+def test_click_through_cancels_hover(qapp):
+    hud = HudWindow(compact=True)
+    hud.enterEvent(None)
+    assert not hud.effective_compact
+    hud.set_click_through(True)
+    assert hud.effective_compact
+
+
+def test_toggle_visible(qapp):
+    hud = HudWindow()
+    hud.show()
+    hud.toggle_visible()
+    assert not hud.isVisible()
+    hud.toggle_visible()
+    assert hud.isVisible()
+    hud.close()

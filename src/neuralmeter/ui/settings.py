@@ -6,7 +6,21 @@ from pathlib import Path
 
 from neuralmeter.config import get_data_dir
 
-DEFAULTS: dict = {"hud_pos": None, "opacity": 1.0, "compact": False, "click_through": False}
+DEFAULTS: dict = {"hud_pos": None, "opacity": 100, "compact": False, "click_through": False}
+
+
+OPACITY_PRESETS = (20, 40, 60, 80, 100)
+
+
+def clamp_opacity(v) -> int:
+    """Opacidade em % inteiro no intervalo [20, 100]; invalido -> 100."""
+    if isinstance(v, bool) or v is None:
+        return 100
+    try:
+        n = round(float(v))
+    except (TypeError, ValueError, OverflowError):
+        return 100
+    return max(20, min(100, n))
 
 
 def settings_path() -> Path:
