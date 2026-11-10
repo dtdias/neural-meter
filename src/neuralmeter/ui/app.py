@@ -24,7 +24,16 @@ def run_app(argv: list[str] | None = None) -> int:
         settings["hud_pos"] = [x, y]
         save_settings(settings)
 
-    hud = HudWindow(on_moved=on_moved, view_loader=lambda now: load_hud_view(db, now))
+    def on_compact_changed(value: bool) -> None:
+        settings["compact"] = value
+        save_settings(settings)
+
+    hud = HudWindow(
+        on_moved=on_moved,
+        view_loader=lambda now: load_hud_view(db, now),
+        compact=bool(settings.get("compact")),
+        on_compact_changed=on_compact_changed,
+    )
     hud.refresh()
     bridge.updated.connect(hud.on_update)
     hud.apply_saved_position(settings.get("hud_pos"))

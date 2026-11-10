@@ -1,4 +1,12 @@
-from neuralmeter.ui.snap import clamp_to_screens, pick_screen, snap_to_edges
+from neuralmeter.ui.snap import anchor_resize, clamp_to_screens, pick_screen, snap_to_edges
+
+
+def test_anchor_resize():
+    area = (0, 0, 1920, 1040)
+    assert anchor_resize((1600, 20, 300, 190), (200, 56), area) == (1700, 20)
+    assert anchor_resize((20, 800, 300, 190), (200, 56), area) == (20, 934)
+    assert anchor_resize((20, 20, 300, 190), (200, 56), area) == (20, 20)
+
 
 AREA = (0, 0, 1920, 1040)
 W, H = 260, 72

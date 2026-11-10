@@ -11,11 +11,12 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QProgressBar,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from neuralmeter.ui.snap import clamp_to_screens, pick_screen, snap_to_edges
+from neuralmeter.ui.snap import anchor_resize, clamp_to_screens, pick_screen, snap_to_edges
 from neuralmeter.ui.view_model import (
     LEVEL_COLORS,
     NO_DATA,
@@ -24,11 +25,18 @@ from neuralmeter.ui.view_model import (
     apply_conn_update,
     conn_label,
     format_countdown,
+    remaining_label,
 )
 
 log = logging.getLogger(__name__)
 
-HUD_SIZE = (300, 190)
+EXPANDED_SIZE = (300, 190)
+HUD_SIZE = EXPANDED_SIZE
+COMPACT_SIZE = (200, 56)
+LEAVE_DELAY_MS = 600
+
+# Placeholders (cor, letra); icones vetoriais ficam para o empacotamento.
+MARKERS = {"claude": ("#d97757", "C"), "chatgpt": ("#10a37f", "G")}
 
 
 class UpdateBridge(QObject):
@@ -118,6 +126,38 @@ class ProviderRow(QWidget):
             text.setText(f"{round(pct)}% · reset {format_countdown(reset, now)}")
 
 
+class CompactRow(QWidget):
+    """Linha da pilula: marcador do provedor, barra 5h e 'restam N%'."""
+
+    def __init__(self, provider: str) -> None:
+        super().__init__()
+        color, letter = MARKERS.get(provider, ("#888888", "?"))
+        self.marker = QLabel(letter)
+        self.marker.setFixedSize(14, 14)
+        self.marker.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.marker.setStyleSheet(
+            f"background:{color};color:white;font-size:9px;font-weight:bold;border-radius:7px;"
+        )
+        self.bar = QProgressBar()
+        self.bar.setRange(0, 100)
+        self.bar.setTextVisible(False)
+        self.bar.setFixedHeight(6)
+        self.text = QLabel("")
+        self.text.setStyleSheet("color: #d0d0d0; font-size: 10px;")
+        self.text.setMinimumWidth(56)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(self.marker)
+        layout.addWidget(self.bar, 1)
+        layout.addWidget(self.text)
+
+    def render(self, view: ProviderView) -> None:
+        self.bar.setValue(round(view.pct_5h))
+        ProviderRow._style(self.bar, view.level_5h)
+        self.text.setText(remaining_label(view))
+
+
 def _default_loader(now: datetime) -> dict:
     return {}
 
@@ -128,6 +168,8 @@ class HudWindow(QWidget):
         on_moved: Callable[[int, int], None] | None = None,
         view_loader: Callable[[datetime], dict] | None = None,
         clock: Callable[[], datetime] | None = None,
+        compact: bool = False,
+        on_compact_changed: Callable[[bool], None] | None = None,
     ) -> None:
         super().__init__()
         self.on_moved = on_moved
@@ -136,13 +178,19 @@ class HudWindow(QWidget):
         self._drag_offset: QPoint | None = None
         self._views: dict[str, ProviderView] = {}
         self._conn = ConnState()
+        self.compact = compact
+        self.on_compact_changed = on_compact_changed
+        self._hover_expanded = False
+        self._leave_timer = QTimer(self)
+        self._leave_timer.setSingleShot(True)
+        self._leave_timer.setInterval(LEAVE_DELAY_MS)
+        self._leave_timer.timeout.connect(self._on_leave_timeout)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setFixedSize(*HUD_SIZE)
 
         self.title_label = QLabel("NeuralMeter")
         self.title_label.setStyleSheet("color: #f2f2f2; font-weight: bold; font-size: 13px;")
@@ -153,12 +201,32 @@ class HudWindow(QWidget):
         header.addWidget(self.title_label)
         header.addWidget(self.status_label, 1)
         self.rows: dict[str, ProviderRow] = {"claude": ProviderRow(), "chatgpt": ProviderRow()}
-        layout = QVBoxLayout(self)
+        self.expanded_page = QWidget()
+        layout = QVBoxLayout(self.expanded_page)
         layout.setContentsMargins(14, 10, 14, 10)
         layout.setSpacing(6)
         layout.addLayout(header)
         for row in self.rows.values():
             layout.addWidget(row)
+
+        self.compact_page = QWidget()
+        clayout = QVBoxLayout(self.compact_page)
+        clayout.setContentsMargins(10, 6, 10, 6)
+        clayout.setSpacing(4)
+        self.compact_rows: dict[str, CompactRow] = {
+            "claude": CompactRow("claude"),
+            "chatgpt": CompactRow("chatgpt"),
+        }
+        for crow in self.compact_rows.values():
+            clayout.addWidget(crow)
+
+        self.stack = QStackedWidget()
+        self.stack.addWidget(self.expanded_page)
+        self.stack.addWidget(self.compact_page)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(self.stack)
+        self._apply_mode()
 
         self._tick_timer = QTimer(self)
         self._tick_timer.timeout.connect(self.tick)
@@ -180,6 +248,7 @@ class HudWindow(QWidget):
             view = self._views.get(provider)
             if view is not None:
                 row.render(view, now)
+                self.compact_rows[provider].render(view)
 
     def refresh(self) -> None:
         """Recarrega o view-model (lê DB) e re-renderiza."""
@@ -201,6 +270,55 @@ class HudWindow(QWidget):
         elif kind in ("conn", "status"):
             self._conn = apply_conn_update(self._conn, kind, payload)
             self.status_label.setText(conn_label(self._conn))
+
+    @property
+    def effective_compact(self) -> bool:
+        return self.compact and not self._hover_expanded
+
+    def _apply_mode(self) -> None:
+        compact = self.effective_compact
+        size = COMPACT_SIZE if compact else EXPANDED_SIZE
+        self.stack.setCurrentWidget(self.compact_page if compact else self.expanded_page)
+        if (self.width(), self.height()) == size:
+            return
+        areas = _areas()
+        if self.isVisible():
+            win = (self.x(), self.y(), self.width(), self.height())
+            pos = anchor_resize(win, size, pick_screen(win, areas))
+            pos = clamp_to_screens(pos, size, areas)
+            self.setFixedSize(*size)
+            self.move(*pos)
+        else:
+            self.setFixedSize(*size)
+
+    def set_compact(self, value: bool) -> None:
+        changed = value != self.compact
+        self.compact = value
+        self._hover_expanded = False
+        self._leave_timer.stop()
+        self._apply_mode()
+        if changed and self.on_compact_changed:
+            self.on_compact_changed(value)
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.set_compact(not self.compact)
+
+    def enterEvent(self, event) -> None:  # noqa: N802
+        if self.compact and self._drag_offset is None:
+            self._leave_timer.stop()
+            if not self._hover_expanded:
+                self._hover_expanded = True
+                self._apply_mode()
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        if self._hover_expanded and self._drag_offset is None:
+            self._leave_timer.start()
+
+    def _on_leave_timeout(self) -> None:
+        if self._hover_expanded:
+            self._hover_expanded = False
+            self._apply_mode()
 
     def apply_saved_position(self, pos) -> None:
         p = tuple(pos) if pos is not None else None

@@ -12,7 +12,21 @@ from neuralmeter.ui.view_model import (
     format_countdown,
     level_for_percent,
     load_hud_view,
+    remaining_label,
 )
+
+
+def test_remaining_label():
+    from dataclasses import replace
+
+    from neuralmeter.ui.view_model import ProviderView
+
+    v = ProviderView("claude", "Claude", 75.0, "yellow", None, 0.0, "green", None, "x", False)
+    assert remaining_label(v) == "restam 25%"
+    assert remaining_label(replace(v, pct_5h=150.0)) == "restam 0%"
+    assert remaining_label(replace(v, pct_5h=-5.0)) == "restam 100%"
+    assert remaining_label(replace(v, rate_limited=True)) == "bloq."
+
 
 NOW = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
 

@@ -40,6 +40,18 @@ def pick_screen(win: Rect, areas: list[Rect]) -> Rect:
     return areas[0]
 
 
+def anchor_resize(win: Rect, new_size: tuple[int, int], area: Rect) -> tuple[int, int]:
+    """Nova posicao ao redimensionar, mantendo a borda do lado da area onde a janela esta."""
+    x, y, w, h = win
+    ax, ay, aw, ah = area
+    new_w, new_h = new_size
+    if x + w / 2 > ax + aw / 2:
+        x = x + w - new_w
+    if y + h / 2 > ay + ah / 2:
+        y = y + h - new_h
+    return (x, y)
+
+
 def clamp_to_screens(
     pos: tuple[int, int] | None,
     size: tuple[int, int],
