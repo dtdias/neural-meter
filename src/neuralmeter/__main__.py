@@ -22,7 +22,10 @@ def main(argv: list[str] | None = None) -> int:
             pass
         finally:
             server.stop()
-    return 0
+        return 0
+    from neuralmeter.ui.app import run_app
+
+    return run_app(argv)
 
 
 if __name__ == "__main__":
