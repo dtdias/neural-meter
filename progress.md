@@ -11,6 +11,7 @@ Objetivo final: `prd.md`.
 - 2026-11-10 — Extensão: JavaScript puro ES modules, sem bundler/TS (menos build, MV3 aceita direto); testes via `node --test` (Node 26). Navegadores alvo: Chromium (Chrome/Edge/Brave/Opera); Firefox fora do v1.0.
 - 2026-11-10 — Dados locais em `%LOCALAPPDATA%\NeuralMeter\neuralmeter.db` (override por env `NEURALMETER_DATA_DIR`, usado nos testes).
 - 2026-11-10 — DB: timestamps gravados em UTC, texto `YYYY-MM-DD HH:MM:SS` (mesmo formato de `CURRENT_TIMESTAMP`, comparável lexicograficamente); Python sempre passa `created_at` explícito. Migração via `PRAGMA user_version` (v1 = schema §6). WAL + `check_same_thread=False` + `threading.Lock` (WS thread e UI thread compartilham). Seed `provider_state` para `claude` e `chatgpt` com defaults §6.
+- 2026-11-10 — Motor: funções puras em `src/neuralmeter/engine/` (recebem eventos+estado+`now`, sem I/O, sem relógio interno) + wrappers finos que leem DB. Claude 5h = janelas encadeadas: 1ª msg abre janela [t, t+5h); msg após fim abre nova. Lookback 24h. Reset oficial futuro em `provider_state.window_5h_reset_at` sobrescreve (janela = [reset-5h, reset)). Reset oficial passado = ignorado. `is_rate_limited=1` + reset futuro → 100%. Percentual limitado a [0,100].
 
 ## Fase 0 — Setup
 - [x] 2026-11-09 — AGENTS.md e progress.md criados.
@@ -20,7 +21,7 @@ Objetivo final: `prd.md`.
 
 ## Fase 1 — Core e Extensão (MVP funcional)
 - [x] 2026-11-10 — `src/neuralmeter/db.py` + `tests/test_db.py`. SQLite: schema `usage_events` / `provider_state` / índice (PRD §6) + migração inicial.
-- [ ] Motor janela 5h — Claude: ciclo a partir da 1ª msg + sync reset oficial (RF01.2).
+- [x] 2026-11-10 — Motor janela 5h — Claude: ciclo a partir da 1ª msg + sync reset oficial (RF01.2). `engine/{window,claude}.py`: `compute_claude_5h` (pura), `get_claude_5h_snapshot`, `sync_claude_official_reset`; `db.from_db_ts`. Testes em `tests/test_engine_claude.py`.
 - [ ] Motor janela 5h — ChatGPT: expiração individual por modelo, 3h/5h configurável (RF01.4).
 - [x] 2026-11-10 — `insert_usage_event` grava UTC. Registro de timestamp por mensagem (RF01.1).
 - [ ] Motor semanal 7 dias: cotas por modelo, histórico rolante, reset semanal (RF02.1–RF02.3).
