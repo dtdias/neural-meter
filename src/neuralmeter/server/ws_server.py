@@ -12,6 +12,7 @@ from websockets.asyncio.server import serve
 
 from neuralmeter.config import WS_HOST, WS_PORT
 from neuralmeter.engine.weight import DEFAULT_WEIGHT_PARAMS, WeightParams
+from neuralmeter.privacy import PrivacySettings
 from neuralmeter.server.handler import handle_message
 from neuralmeter.server.protocol import (
     MAX_PAYLOAD_BYTES,
@@ -39,6 +40,7 @@ class WsServer:
         port: int = WS_PORT,
         on_update: Callable[[str, dict], None] | None = None,
         weight_params: WeightParams = DEFAULT_WEIGHT_PARAMS,
+        privacy: PrivacySettings | None = None,
     ):
         if host != "127.0.0.1":
             raise ValueError("WS server must bind to 127.0.0.1 only")
@@ -47,12 +49,17 @@ class WsServer:
         self._port = port
         self._on_update = on_update
         self._weight_params = weight_params
+        self._privacy = privacy
         self.ready = threading.Event()
         self.thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stop: asyncio.Event | None = None
         self._clients = 0
         self._error: BaseException | None = None
+
+    def set_privacy(self, privacy: PrivacySettings | None) -> None:
+        """Troca a política de privacidade; vale para mensagens seguintes (atribuição atômica)."""
+        self._privacy = privacy
 
     @property
     def port(self) -> int:
@@ -74,7 +81,9 @@ class WsServer:
             async for raw in ws:
                 try:
                     msg = parse_message(raw, datetime.now(UTC))
-                    reply, update = handle_message(self._conn, msg, self._weight_params)
+                    reply, update = handle_message(
+                        self._conn, msg, self._weight_params, self._privacy
+                    )
                 except ProtocolError as e:
                     await ws.send(encode_reply("error", reason=str(e)))
                     continue

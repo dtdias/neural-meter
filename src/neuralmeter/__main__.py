@@ -9,14 +9,30 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     print(f"NeuralMeter {__version__} - ws://{WS_HOST}:{WS_PORT} - db={get_db_path()}")
     if "--server-only" in argv:
-        from neuralmeter.db import connect_db
-        from neuralmeter.server import start_ws_server
-        from neuralmeter.ui.settings import load_settings, parse_weight_params
+        from datetime import UTC, datetime
 
+        from neuralmeter.db import connect_db
+        from neuralmeter.privacy import apply_retention
+        from neuralmeter.server import start_ws_server
+        from neuralmeter.ui.settings import (
+            ensure_privacy_salt,
+            load_settings,
+            parse_privacy_settings,
+            parse_weight_params,
+            save_settings,
+        )
+
+        settings = load_settings()
+        if ensure_privacy_salt(settings):
+            save_settings(settings)
+        privacy = parse_privacy_settings(settings)
+        db = connect_db()
+        apply_retention(db, datetime.now(UTC), privacy.retention_days)
         server = start_ws_server(
-            connect_db(),
+            db,
             on_update=lambda kind, payload: print(f"update {kind}: {payload}"),
-            weight_params=parse_weight_params(load_settings().get("claude_weight")),
+            weight_params=parse_weight_params(settings.get("claude_weight")),
+            privacy=privacy,
         )
         try:
             while True:

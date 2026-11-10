@@ -64,6 +64,9 @@ def test_menu_order(qapp):
         "Configurar limites…",
         "Iniciar com o Windows",
         "-",
+        "Modo privado (hash IDs)",
+        "Apagar histórico local…",
+        "-",
         "Sair",
     ]
 
@@ -131,3 +134,27 @@ def test_hud_renewed_signal_reaches_tray(qapp, monkeypatch):
     hud.renewed.emit("chatgpt")
     assert tray is not None
     assert len(shown) == 1 and "ChatGPT" in shown[0][1]
+
+
+def test_private_mode_toggle_calls_back(qapp):
+    got = []
+    tray = build_tray(HudWindow(), lambda: None, on_privacy_changed=got.append)
+    assert tray.act_private.isChecked()
+    tray.act_private.trigger()
+    assert got == [False]
+
+
+def test_clear_history(qapp, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from neuralmeter.db import connect_db, insert_usage_event
+
+    conn = connect_db(tmp_path / "t.db")
+    insert_usage_event(conn, "claude", "m")
+    tray = build_tray(HudWindow(), lambda: None, conn=conn)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
+    assert tray._clear_history() == 0
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    assert tray._clear_history() == 1
+    assert conn.execute("SELECT COUNT(*) FROM usage_events").fetchone()[0] == 0
+    conn.close()

@@ -141,6 +141,22 @@ def insert_usage_event(
         return int(cur.lastrowid)
 
 
+def purge_usage_events_before(conn: sqlite3.Connection, cutoff_ts: str) -> int:
+    """Apaga eventos com created_at < cutoff_ts ('YYYY-MM-DD HH:MM:SS' UTC). Retorna removidos."""
+    with _write_lock:
+        cur = conn.execute("DELETE FROM usage_events WHERE created_at < ?", (cutoff_ts,))
+        conn.commit()
+        return cur.rowcount
+
+
+def clear_usage_events(conn: sqlite3.Connection) -> int:
+    """Apaga todo o histórico de usage_events (mantém provider_state/model_limits)."""
+    with _write_lock:
+        cur = conn.execute("DELETE FROM usage_events")
+        conn.commit()
+        return cur.rowcount
+
+
 def get_events_since(
     conn: sqlite3.Connection,
     provider: str,
