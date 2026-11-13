@@ -110,3 +110,50 @@ def test_extra_keys_and_text_ignored():
 def test_ping_and_reply():
     assert isinstance(parse_message('{"type":"ping"}', NOW), Ping)
     assert encode_reply("ack", ref="usage") == '{"type":"ack","ref":"usage"}'
+
+
+def test_quota_valid_zero_and_reject_invalid():
+    base = {
+        "type": "quota",
+        "provider": "claude",
+        "account_hash": "a" * 64,
+        "window": "5h",
+        "percent": 0,
+        "observed_at": ms(NOW),
+    }
+    parsed = parse_message(json.dumps(base), NOW)
+    assert parsed.percent == 0 and parsed.reset_at is None
+    for changes in (
+        {"percent": float("inf")},
+        {"percent": 101},
+        {"provider": "chatgpt"},
+        {"observed_at": ms(NOW + timedelta(seconds=1))},
+        {"account_hash": "raw-org-id"},
+        {"window": "5h", "model": "opus"},
+        {"window": "opus", "model": "sonnet"},
+        {"window": "other"},
+    ):
+        with pytest.raises(ProtocolError):
+            parse_message(json.dumps({**base, **changes}), NOW)
+
+    model = {**base, "window": "opus", "model": "opus"}
+    assert parse_message(json.dumps(model), NOW).model == "opus"
+    assert parse_message(json.dumps({**base, "window": "weekly"}), NOW).window == "weekly"
+
+
+def test_quota_identity_observation_has_hash_and_time_only():
+    msg = {
+        "type": "quota_observation",
+        "provider": "claude",
+        "account_hash": "b" * 64,
+        "observed_at": ms(NOW),
+    }
+    parsed = parse_message(json.dumps(msg), NOW)
+    assert parsed.account_hash == "b" * 64 and parsed.observed_at == NOW
+    for changes in (
+        {"provider": "chatgpt"},
+        {"account_hash": "raw-org"},
+        {"observed_at": ms(NOW + timedelta(seconds=1))},
+    ):
+        with pytest.raises(ProtocolError):
+            parse_message(json.dumps({**msg, **changes}), NOW)

@@ -5,6 +5,7 @@ reconhecidas são simplesmente ignoradas.
 """
 
 import json
+import math
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -54,6 +55,24 @@ class Limit:
 @dataclass(frozen=True)
 class Ping:
     pass
+
+
+@dataclass(frozen=True)
+class Quota:
+    provider: str
+    account_hash: str
+    window: str
+    model: str | None
+    percent: float
+    reset_at: datetime | None
+    observed_at: datetime
+
+
+@dataclass(frozen=True)
+class QuotaObservation:
+    provider: str
+    account_hash: str
+    observed_at: datetime
 
 
 def _provider(d: dict) -> str:
@@ -152,6 +171,53 @@ def parse_message(raw: str | bytes, now: datetime):
             rate_limited=rl,
             model=model,
         )
+    if t == "quota":
+        provider, account_hash, window = _provider(d), d.get("account_hash"), d.get("window")
+        if provider != "claude" or window not in ("5h", "weekly", "opus", "sonnet"):
+            raise ProtocolError("invalid quota identity")
+        if (
+            not isinstance(account_hash, str)
+            or len(account_hash) != 64
+            or any(ch not in "0123456789abcdef" for ch in account_hash)
+        ):
+            raise ProtocolError("invalid account hash")
+        pct = d.get("percent")
+        if (
+            isinstance(pct, bool)
+            or not isinstance(pct, int | float)
+            or not math.isfinite(pct)
+            or not 0 <= pct <= 100
+        ):
+            raise ProtocolError("invalid quota percent")
+        observed = _epoch_ms(d.get("observed_at"), "observed_at")
+        reset = d.get("reset_at")
+        reset_at = _epoch_ms(reset, "reset_at") if reset is not None else None
+        if (
+            observed > now
+            or observed < now - timedelta(minutes=10)
+            or (reset_at is not None and (reset_at <= now or reset_at > now + timedelta(days=366)))
+        ):
+            raise ProtocolError("invalid quota time")
+        model = d.get("model")
+        if window in ("5h", "weekly") and model is not None:
+            raise ProtocolError("aggregate quota cannot name model")
+        if window in ("opus", "sonnet") and model != window:
+            raise ProtocolError("invalid quota model")
+        return Quota(provider, account_hash, window, model, float(pct), reset_at, observed)
+    if t == "quota_observation":
+        provider, account_hash = _provider(d), d.get("account_hash")
+        if provider != "claude":
+            raise ProtocolError("invalid quota observation provider")
+        if (
+            not isinstance(account_hash, str)
+            or len(account_hash) != 64
+            or any(ch not in "0123456789abcdef" for ch in account_hash)
+        ):
+            raise ProtocolError("invalid account hash")
+        observed = _epoch_ms(d.get("observed_at"), "observed_at")
+        if observed > now or observed < now - timedelta(minutes=10):
+            raise ProtocolError("invalid quota observation time")
+        return QuotaObservation(provider, account_hash, observed)
     raise ProtocolError("unknown type")
 
 

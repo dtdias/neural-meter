@@ -21,8 +21,8 @@ test("manifest MV3 com apenas 2 hosts", () => {
   ]);
 });
 
-test("manifest: service worker module e permissions alarms", () => {
+test("manifest: service worker module e permissions necessárias", () => {
   assert.equal(manifest.background.service_worker, "src/background.js");
   assert.equal(manifest.background.type, "module");
-  assert.deepEqual(manifest.permissions, ["alarms"]);
+  assert.deepEqual(manifest.permissions, ["alarms", "storage"]);
 });

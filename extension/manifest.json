@@ -17,7 +17,7 @@
       "32": "icons/icon32.png"
     }
   },
-  "permissions": ["alarms"],
+  "permissions": ["alarms", "storage"],
   "host_permissions": ["https://claude.ai/*", "https://chatgpt.com/*"],
   "background": {
     "service_worker": "src/background.js",

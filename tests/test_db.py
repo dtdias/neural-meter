@@ -16,7 +16,7 @@ def conn(tmp_path, monkeypatch):
 def test_schema_objects_and_version(conn):
     names = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master")}
     assert {"usage_events", "provider_state", "idx_usage_provider_time"} <= names
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
     assert "model_limits" in names
 
 
@@ -32,10 +32,130 @@ def test_migrate_v1_to_v2_existing_db(tmp_path):
     raw.commit()
     raw.close()
     c = db.connect_db(path)
-    assert c.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert c.execute("PRAGMA user_version").fetchone()[0] == 5
     assert c.execute("SELECT COUNT(*) FROM usage_events").fetchone()[0] == 1
     assert db.get_model_limits(c, "chatgpt") == {}
     c.close()
+
+
+def test_quota_snapshot_order_expiry_and_isolation(conn):
+    now = datetime(2026, 11, 12, 12, tzinfo=UTC)
+    account = "a" * 64
+    db.observe_quota_identity(conn, "claude", account, now)
+    assert db.put_quota_snapshot(
+        conn, "claude", account, "5h", None, 50, now + timedelta(hours=1), now
+    )
+    assert not db.put_quota_snapshot(
+        conn, "claude", account, "5h", None, 99, now + timedelta(hours=1), now
+    )
+    assert not db.put_quota_snapshot(
+        conn,
+        "claude",
+        account,
+        "5h",
+        None,
+        25,
+        now + timedelta(minutes=30),
+        now + timedelta(minutes=1),
+    )
+    assert not db.put_quota_snapshot(
+        conn,
+        "claude",
+        account,
+        "5h",
+        None,
+        25,
+        now + timedelta(hours=1),
+        now + timedelta(minutes=2),
+    )
+    result = db.get_quota_snapshots(conn, now)
+    assert result["status"] == "fresh"
+    assert result["windows"][("5h", "")]["percent"] == 50
+    assert db.get_quota_snapshots(conn, now + timedelta(minutes=11))["status"] == "stale"
+    with pytest.raises(ValueError):
+        db.put_quota_snapshot(conn, "chatgpt", account, "5h", None, 2, None, now)
+
+
+def test_quota_multi_account_ambiguous_and_model_scope(conn):
+    now = datetime(2026, 11, 12, 12, tzinfo=UTC)
+    db.observe_quota_identity(conn, "claude", "a" * 64, now)
+    db.observe_quota_identity(conn, "claude", "b" * 64, now)
+    assert db.put_quota_snapshot(
+        conn, "claude", "a" * 64, "weekly", None, 12, now + timedelta(days=1), now
+    )
+    for account, pct in (("a" * 64, 25), ("b" * 64, 75)):
+        assert db.put_quota_snapshot(
+            conn, "claude", account, "5h", None, pct, now + timedelta(hours=1), now
+        )
+    assert db.get_quota_snapshots(conn, now)["status"] == "ambiguous"
+    with pytest.raises(ValueError):
+        db.put_quota_snapshot(
+            conn, "claude", "a" * 64, "5h", "opus", 10, now + timedelta(hours=1), now
+        )
+    with pytest.raises(ValueError):
+        db.put_quota_snapshot(
+            conn, "claude", "a" * 64, "opus", "sonnet", 10, now + timedelta(hours=1), now
+        )
+
+
+def test_quota_preserves_model_scoped_windows(conn):
+    now = datetime(2026, 11, 12, 12, tzinfo=UTC)
+    db.observe_quota_identity(conn, "claude", "d" * 64, now)
+    for model, percent in (("opus", 33), ("sonnet", 44)):
+        assert db.put_quota_snapshot(
+            conn, "claude", "d" * 64, model, model, percent, now + timedelta(days=1), now
+        )
+    result = db.get_quota_snapshots(conn, now)
+    assert result["status"] == "fresh"
+    assert result["windows"][("opus", "opus")]["percent"] == 33
+    assert result["windows"][("sonnet", "sonnet")]["percent"] == 44
+
+
+def test_multiple_unconfirmed_stale_accounts_are_not_arbitrarily_selected(conn):
+    now = datetime(2026, 11, 12, 12, tzinfo=UTC)
+    observed = now - timedelta(minutes=11)
+    for account, percent in (("e" * 64, 20), ("f" * 64, 80)):
+        db.observe_quota_identity(conn, "claude", account, observed)
+        db.put_quota_snapshot(
+            conn, "claude", account, "5h", None, percent, now + timedelta(hours=1), observed
+        )
+    result = db.get_quota_snapshots(conn, now)
+    assert result["status"] == "ambiguous"
+    assert result["stale_windows"] == {}
+
+
+def test_quota_reset_expiry_and_unavailable_after_restart(conn):
+    now = datetime(2026, 11, 12, 12, tzinfo=UTC)
+    account = "c" * 64
+    db.observe_quota_identity(conn, "claude", account, now)
+    db.put_quota_snapshot(
+        conn, "claude", account, "weekly", None, 0, now + timedelta(minutes=2), now
+    )
+    assert db.get_quota_snapshots(conn, now)["status"] == "fresh"
+    assert db.get_quota_snapshots(conn, now + timedelta(minutes=3))["status"] == "stale"
+    conn.execute("DELETE FROM quota_snapshots")
+    conn.commit()
+    assert db.get_quota_snapshots(conn, now)["status"] == "unavailable"
+
+
+def test_v3_unscoped_quota_quarantined_on_upgrade(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "v3.db"
+    raw = sqlite3.connect(path)
+    raw.executescript(db.SCHEMA_V1 + db.SCHEMA_V2 + db.SCHEMA_V3)
+    raw.execute(
+        "INSERT INTO quota_snapshots "
+        "VALUES('claude','browser','5h','',20,NULL,'2026-11-12 12:00:00')"
+    )
+    raw.execute("PRAGMA user_version=3")
+    raw.commit()
+    raw.close()
+    conn = db.connect_db(path)
+    now = datetime(2026, 11, 12, 12, tzinfo=UTC)
+    assert db.get_quota_snapshots(conn, now)["status"] == "unavailable"
+    assert conn.execute("SELECT COUNT(*) FROM quota_snapshots_unscoped").fetchone()[0] == 1
+    conn.close()
 
 
 def test_set_model_limit_upsert_and_validation(conn):
