@@ -1,6 +1,6 @@
 [project]
 name = "neuralmeter"
-version = "0.1.0"
+version = "0.2.0"
 description = "NeuralMeter: HUD local de uso de limites de IA"
 readme = "README.md"
 requires-python = ">=3.12"
