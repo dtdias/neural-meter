@@ -6,26 +6,31 @@ import { computeTabsStatus } from "../src/tabs_status.js";
 test("urls mistas", () => {
   assert.deepEqual(
     computeTabsStatus(["https://claude.ai/chat/1", "https://example.com/", "lixo"]),
-    { claude: true, chatgpt: false },
+    { claude: true, chatgpt: false, gemini: false },
   );
   assert.deepEqual(
     computeTabsStatus(["https://chatgpt.com/c/1", "https://claude.ai/new"]),
-    { claude: true, chatgpt: true },
+    { claude: true, chatgpt: true, gemini: false },
   );
+  assert.deepEqual(computeTabsStatus(["https://gemini.google.com/app"]), {
+    claude: false, chatgpt: false, gemini: true,
+  });
 });
 
 test("host falso, http e subdominio nao contam", () => {
   assert.deepEqual(computeTabsStatus(["https://evil.com/claude.ai"]), {
     claude: false,
     chatgpt: false,
+    gemini: false,
   });
-  assert.deepEqual(computeTabsStatus(["http://claude.ai"]), { claude: false, chatgpt: false });
+  assert.deepEqual(computeTabsStatus(["http://claude.ai"]), { claude: false, chatgpt: false, gemini: false });
   assert.deepEqual(computeTabsStatus(["https://www.claude.ai/", "https://x.chatgpt.com/"]), {
     claude: false,
     chatgpt: false,
+    gemini: false,
   });
 });
 
 test("lista vazia", () => {
-  assert.deepEqual(computeTabsStatus([]), { claude: false, chatgpt: false });
+  assert.deepEqual(computeTabsStatus([]), { claude: false, chatgpt: false, gemini: false });
 });

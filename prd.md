@@ -11,6 +11,8 @@
 
 O **NeuralMeter** é um utilitário desktop leve para Windows que monitora, em tempo real e sem consumo de tokens, os limites de uso de **5 horas** e **semanais** do Claude (`claude.ai`) e do ChatGPT (`chatgpt.com`) diretamente a partir da sessão ativa do navegador do usuário.
 
+Gemini Web (`gemini.google.com`) entra como provedor **experimental** conforme RF05: só contagens locais de envios e tokens aproximados; quota/reset oficiais permanecem desconhecidos até validação própria.
+
 ### 1.1. Problema
 Usuários dos planos web (Claude Pro/Max/Team e ChatGPT Plus/Pro/Team) sofrem com a falta de visibilidade clara sobre quantas interações ou volume de contexto restam antes de atingirem o bloqueio temporário de uso (rate limit). Além disso, consultar a IA via API ou enviar mensagens de teste consome a própria franquia que o usuário deseja economizar.
 
@@ -85,6 +87,12 @@ Como as plataformas web utilizam proteções rigorosas (Cloudflare Turnstile, TL
 * **RF04.2 (Auto-Calibração):** Caso o usuário atinja o limite real na interface do Claude ou ChatGPT antes de a barra chegar a 100%, a extensão detecta o banner/JSON de bloqueio, crava a barra em 100% imediatamente, captura o horário exato de desbloqueio e ajusta o teto estimado para os próximos ciclos.
 * **RF04.3 (Notificação de Cota Renovada):** Emitir uma notificação discreta do Windows (Toast Notification) quando o cronômetro de 5 horas zerar.
 
+### RF05 — Gemini Web experimental
+* **RF05.1:** A extensão pode contar envios de texto observados passivamente em `gemini.google.com` e persistir apenas contagens/metadados locais.
+* **RF05.2:** Até cotas e resets serem validados por evidência suficiente, HUD deve mostrar quota/reset como **desconhecidos**, sem inventar percentual, limite, janela ou bloqueio. Pode mostrar contagem local de mensagens e tokens aproximados, identificados como estimativa.
+* **RF05.3:** Gemini deve ter identidade/provider separados; limites/reset oficiais Claude/ChatGPT nunca podem ser aplicados ao Gemini.
+* **RF05.4:** Captura experimental não modifica requests/responses, não faz requisições próprias e não envia texto de prompt ao WS/SQLite/logs.
+
 ---
 
 ## 4. Requisitos Não-Funcionais (RNF)
@@ -118,7 +126,7 @@ Como as plataformas web utilizam proteções rigorosas (Cloudflare Turnstile, TL
 -- Tabela de eventos de uso capturados em tempo real
 CREATE TABLE IF NOT EXISTS usage_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider TEXT NOT NULL,              -- 'claude' | 'chatgpt'
+    provider TEXT NOT NULL,              -- 'claude' | 'chatgpt' | 'gemini' (experimental counts)
     model_name TEXT NOT NULL,            -- ex: 'claude-3-7-sonnet', 'gpt-4o', 'o3-mini'
     conversation_id TEXT,                -- ID da conversa para calcular acúmulo de contexto
     prompt_chars INTEGER DEFAULT 0,      -- Tamanho da mensagem enviada

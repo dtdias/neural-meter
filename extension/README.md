@@ -1,6 +1,6 @@
 # NeuralMeter Bridge (extensão MV3)
 
-Lê passivamente o uso de claude.ai e chatgpt.com e envia ao app local via `ws://127.0.0.1:8765`.
+Lê passivamente o uso de claude.ai e chatgpt.com e envia ao app local via `ws://127.0.0.1:8765`. Gemini web está em modo experimental.
 
 Para usuarios finais: use o zip `NeuralMeter-Bridge-<versao>.zip` (gerado por `scripts/build_installer.py`; ver README raiz, secao Instalacao).
 
@@ -16,6 +16,14 @@ Para usuarios finais: use o zip `NeuralMeter-Bridge-<versao>.zip` (gerado por `s
 
 ## Testes unitários
 `cd extension; npm test`
+
+## Gemini Web (experimental)
+- Observa somente POST `StreamGenerate` em `gemini.google.com`; captura passiva fetch/XHR e lê `f.req` clonando/normalizando corpo dentro de 64 KiB.
+- Base do envelope: fonte pública [Gemini-API, commit `f14269ab3271f7d481191610195bd8c9ffee02e4`](https://github.com/HanaokaYuzu/Gemini-API/tree/f14269ab3271f7d481191610195bd8c9ffee02e4); formato interno não é contrato oficial e pode mudar.
+- Conta envios de texto localmente; prompt não vai para WebSocket/SQLite. HUD mostra contagem, tokens aproximados (~4 chars/token) e quota/reset como desconhecidos. Nenhum limite oficial, janela de cota ou bloqueio é inferido.
+- Nenhum pedido ativo é feito pela extensão. Captura não validada em navegador real; parser usa fixtures sintéticas.
+- Gemini parser roda em MAIN e só atravessa `postMessage` com contagens/metadados; texto, `f.req`, token `at` e corpo bruto ficam fora do handoff. Claude/ChatGPT XHR observam respostas textuais/error limitadas sem substituir event handlers da página.
+- Status de aba Gemini também aciona badge verde. Gemini fica fora de diálogos de limite/calibração: nenhum limite/reset oficial é conhecido.
 
 ## Captura passiva (claude.ai)
 - page_hook.js (MAIN world) envolve etch sem alterar request/resposta; ridge.js (ISOLATED) calcula contagens e envia usage/limit ao SW. Texto de prompt nunca sai da aba.

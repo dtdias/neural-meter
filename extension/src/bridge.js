@@ -3,6 +3,7 @@
   const MODULES = {
     "claude.ai": ["src/claude_capture.js", "createClaudeCapture"],
     "chatgpt.com": ["src/chatgpt_capture.js", "createChatgptCapture"],
+    "gemini.google.com": ["src/gemini_capture.js", "createGeminiCapture"],
   };
   const target = MODULES[location.hostname];
   if (!target) return;
@@ -15,6 +16,7 @@
   })();
   const queue = [];
   let capture = null;
+  let bridgeMsg = null;
   let quotaEnabled = false;
 
   function emit(m) {
@@ -29,6 +31,10 @@
   function handle(d) {
     try {
     if (d.k === "req") capture.onRequest(d.id, d.url, d.method, d.body);
+      else if (d.k === "geminiUsage" && location.hostname === "gemini.google.com") {
+        const normalized = bridgeMsg.geminiEventToBridgeMessage(d);
+        if (normalized) emit(normalized);
+      }
       else if ((d.k === "quota" || d.k === "quotaIdentity") && quotaEnabled && typeof d.orgId === "string") {
         emit({ nm: "quotaCandidate", payload: { orgId: d.orgId, body: d.k === "quota" ? d.body : null } });
       }
@@ -48,10 +54,12 @@
   (async () => {
     try {
       const url = (p) => chrome.runtime.getURL(p);
-      const [cap, trk] = await Promise.all([
+      const [cap, trk, msg] = await Promise.all([
         import(url(target[0])),
         import(url("src/context_tracker.js")),
+        import(url("src/bridge_msg.js")),
       ]);
+      bridgeMsg = msg;
       capture = cap[target[1]]({
         emit,
         tracker: trk.createContextTracker({ max: 50 }),

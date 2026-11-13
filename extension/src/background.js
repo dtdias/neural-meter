@@ -34,7 +34,7 @@ const client = createWsClient({
 
 async function refreshTabs() {
   const tabs = await chrome.tabs.query({
-    url: ["https://claude.ai/*", "https://chatgpt.com/*"],
+    url: ["https://claude.ai/*", "https://chatgpt.com/*", "https://gemini.google.com/*"],
   });
   const status = computeTabsStatus(tabs.map((t) => t.url));
   const claudeCount = tabs.filter((tab) => {
@@ -43,7 +43,7 @@ async function refreshTabs() {
       return u.protocol === "https:" && u.hostname === "claude.ai" && !u.port && !u.username && !u.password;
     } catch { return false; }
   }).length;
-  hasTabs = status.claude || status.chatgpt;
+  hasTabs = status.claude || status.chatgpt || status.gemini;
   client.setTabs({ ...status, claude_count: claudeCount });
   updateBadge();
 }

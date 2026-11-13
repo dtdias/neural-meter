@@ -59,7 +59,7 @@ def test_ts_recent_kept():
         '"x"',
         json.dumps({"type": "nope"}),
         json.dumps({}),
-        usage(provider="gemini"),
+        usage(provider="unknown"),
         usage(prompt_chars=-1),
         usage(prompt_chars="3"),
         usage(prompt_chars=True),

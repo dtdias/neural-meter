@@ -1,9 +1,9 @@
 // Whitelist/sanitização de mensagens content script -> SW -> servidor (pura).
-const PROVIDERS = new Set(["claude", "chatgpt"]);
+const PROVIDERS = new Set(["claude", "chatgpt", "gemini"]);
 const isStr = (v, max) => typeof v === "string" && v.length > 0 && v.length <= max;
 const isCount = (v) => Number.isInteger(v) && v >= 0;
 
-const PROVIDER_HOSTS = { claude: "claude.ai", chatgpt: "chatgpt.com" };
+const PROVIDER_HOSTS = { claude: "claude.ai", chatgpt: "chatgpt.com", gemini: "gemini.google.com" };
 
 export function providerMatchesSender(provider, url) {
   try {
@@ -26,6 +26,15 @@ export function sanitizeQuotaCandidate(msg, senderUrl) {
   } catch {
     return null;
   }
+}
+
+export function geminiEventToBridgeMessage(event) {
+  if (event?.k !== "geminiUsage") return null;
+  const { prompt_chars, context_chars, ts } = event;
+  if (!isCount(prompt_chars) || !isCount(context_chars) || typeof ts !== "number" || !Number.isFinite(ts)) return null;
+  return { nm: "usage", payload: {
+    provider: "gemini", model: "gemini-unknown", prompt_chars, context_chars, ts,
+  } };
 }
 
 export function sanitizeBridgeMessage(msg) {
@@ -53,6 +62,7 @@ export function sanitizeBridgeMessage(msg) {
       return { type: "usage", ...out };
     }
     if (msg.nm === "limit") {
+      if (p.provider === "gemini") return null;
       if (p.scope !== "5h" && p.scope !== "weekly") return null;
       if (!Number.isInteger(p.reset_at) || p.reset_at <= 0) return null;
       const out = { type: "limit", provider: p.provider, scope: p.scope, reset_at: p.reset_at };

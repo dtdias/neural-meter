@@ -155,10 +155,12 @@ def test_load_hud_view(tmp_data_dir):
     insert_usage_event(conn, "claude", "sonnet-4", prompt_chars=400, created_at=t)
     insert_usage_event(conn, "chatgpt", "gpt-4o", prompt_chars=100, created_at=t)
     views = load_hud_view(conn, NOW)
-    assert set(views) == {"claude", "chatgpt"}
+    assert set(views) == {"claude", "chatgpt", "gemini"}
     assert views["claude"].pct_5h > 0 and views["claude"].last_model == "sonnet-4"
     assert views["chatgpt"].pct_5h > 0 and views["chatgpt"].last_model == "gpt-4o"
     assert views["claude"].pct_week > 0
+    assert views["gemini"].quota_unknown is True
+    assert views["gemini"].source_5h.startswith("experimental")
 
 
 def test_load_hud_view_empty(tmp_data_dir):
@@ -176,12 +178,17 @@ def test_apply_conn_update_transitions():
     s = apply_conn_update(
         s, "status", {"tabs": {"claude": True, "chatgpt": False, "claude_count": 2}}
     )
-    assert s.tabs == {"claude": True, "chatgpt": False} and conn_label(s) == "online"
+    assert (
+        s.tabs == {"claude": True, "chatgpt": False, "gemini": False} and conn_label(s) == "online"
+    )
     assert s.claude_tabs == 2
     s = apply_conn_update(s, "conn", {"clients": 2})
     assert s.tabs["claude"] and conn_label(s) == "online"
     s = apply_conn_update(s, "conn", {"clients": 0})
-    assert s.tabs == {"claude": False, "chatgpt": False} and conn_label(s) == "offline"
+    assert (
+        s.tabs == {"claude": False, "chatgpt": False, "gemini": False}
+        and conn_label(s) == "offline"
+    )
     assert s.claude_tabs is None
     assert apply_conn_update(s, "usage", {}) == s
     assert apply_conn_update(s, "status", {}) == s

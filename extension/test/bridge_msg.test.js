@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { sanitizeBridgeMessage as s, providerMatchesSender as pms, sanitizeQuotaCandidate } from "../src/bridge_msg.js";
+import { sanitizeBridgeMessage as s, providerMatchesSender as pms, sanitizeQuotaCandidate, geminiEventToBridgeMessage } from "../src/bridge_msg.js";
 
 test("providerMatchesSender", () => {
   assert.equal(pms("claude", "https://claude.ai/chat/1"), true);
   assert.equal(pms("chatgpt", "https://chatgpt.com/c/1"), true);
+  assert.equal(pms("gemini", "https://gemini.google.com/app"), true);
   assert.equal(pms("claude", "https://chatgpt.com/c/1"), false);
   assert.equal(pms("chatgpt", "https://claude.ai/"), false);
   assert.equal(pms("chatgpt", "https://chatgpt.com.evil.io/"), false);
@@ -19,6 +20,24 @@ const usage = { provider: "claude", model: "m", conversation_id: "c", prompt_cha
 
 test("usage válido, extras removidos", () => {
   assert.deepEqual(s({ nm: "usage", payload: { ...usage, evil: "x" } }), { type: "usage", ...usage });
+});
+
+test("Gemini usage accepted only through Gemini host; no Gemini quota message", () => {
+  const event = { provider: "gemini", model: "gemini-unknown", prompt_chars: 4, context_chars: 4 };
+  assert.deepEqual(s({ nm: "usage", payload: event }), { type: "usage", ...event });
+  assert.equal(pms("gemini", "https://evil.example/"), false);
+  assert.equal(s({ nm: "limit", payload: { provider: "gemini", scope: "5h", reset_at: 10 } }), null);
+});
+
+test("Gemini MAIN handoff adapter whitelists counts and strips arbitrary fields", () => {
+  const normalized = geminiEventToBridgeMessage({
+    k: "geminiUsage", prompt_chars: 42, context_chars: 42, ts: 123,
+    prompt: "secret", token: "secret", body: "secret", f_req: "secret",
+  });
+  assert.deepEqual(normalized, { nm: "usage", payload: {
+    provider: "gemini", model: "gemini-unknown", prompt_chars: 42, context_chars: 42, ts: 123,
+  } });
+  assert.equal(geminiEventToBridgeMessage({ k: "geminiUsage", prompt_chars: -1, context_chars: 1, ts: 1 }), null);
 });
 
 test("usage inválido", () => {
