@@ -1,5 +1,6 @@
 """Camada SQLite local do NeuralMeter (schema PRD §6)."""
 
+import re
 import sqlite3
 import threading
 from datetime import UTC, datetime
@@ -125,27 +126,175 @@ def _check_provider(provider: str) -> None:
         raise ValueError(f"provider inválido: {provider!r}; esperado um de {PROVIDERS}")
 
 
-def migrate(conn: sqlite3.Connection) -> None:
-    """Aplica migrações pendentes via PRAGMA user_version. Idempotente."""
-    with _write_lock:
-        version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version < 1:
-            conn.executescript(SCHEMA_V1)
-            conn.executemany(
-                "INSERT OR IGNORE INTO provider_state (provider) VALUES (?)",
-                [(p,) for p in PROVIDERS],
+def _execute_migration_statement(conn: sqlite3.Connection, statement: str) -> None:
+    conn.execute(statement)
+
+
+def _apply_schema(conn: sqlite3.Connection, schema: str) -> None:
+    statement = ""
+    for line in schema.splitlines():
+        statement += line + "\n"
+        if sqlite3.complete_statement(statement):
+            if statement.strip():
+                _execute_migration_statement(conn, statement)
+            statement = ""
+    if statement.strip():
+        raise sqlite3.OperationalError("incomplete migration SQL")
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in conn.execute(f'PRAGMA table_info("{table}")')}
+
+
+def _normalized_table_sql(conn: sqlite3.Connection, table: str) -> str:
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone()
+    if row is None or row[0] is None:
+        raise sqlite3.DatabaseError(f"missing table definition: {table}")
+    return re.sub(r"[\s\"`\[\]]+", "", row[0]).lower().rstrip(";")
+
+
+def _validate_table_sql(conn: sqlite3.Connection, table: str, expected: str) -> None:
+    actual = _normalized_table_sql(conn, table)
+    normalized_expected = re.sub(r"[\s\"`\[\]]+", "", expected).lower().rstrip(";")
+    if actual != normalized_expected:
+        raise sqlite3.DatabaseError(f"incompatible schema for {table}")
+
+
+LEGACY_QUOTA_TABLE_SQL = """
+CREATE TABLE quota_snapshots (
+    provider TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    window_name TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    percent REAL NOT NULL CHECK(percent >= 0 AND percent <= 100),
+    reset_at TEXT,
+    observed_at TEXT NOT NULL,
+    PRIMARY KEY(provider, scope, window_name, model)
+)
+"""
+
+SCOPED_QUOTA_TABLE_SQL = """
+CREATE TABLE quota_snapshots (
+    provider TEXT NOT NULL,
+    account_hash TEXT NOT NULL,
+    window_name TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    percent REAL NOT NULL CHECK(percent >= 0 AND percent <= 100),
+    reset_at TEXT,
+    observed_at TEXT NOT NULL,
+    PRIMARY KEY(provider, account_hash, window_name, model)
+);
+"""
+
+
+def _validate_quota_table(conn: sqlite3.Connection, table: str, *, scoped: bool) -> None:
+    expected = SCOPED_QUOTA_TABLE_SQL if scoped else LEGACY_QUOTA_TABLE_SQL
+    _validate_table_sql(
+        conn, table, expected.replace("CREATE TABLE quota_snapshots", f"CREATE TABLE {table}")
+    )
+
+
+def _migrate_v4(conn: sqlite3.Connection) -> None:
+    names = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    legacy_exists = "quota_snapshots_unscoped" in names
+    current_exists = "quota_snapshots" in names
+
+    if current_exists:
+        if legacy_exists:
+            if _table_columns(conn, "quota_snapshots") == _table_columns(
+                conn, "quota_snapshots_unscoped"
+            ):
+                # Old executescript sequence can retry V3 after V4's committed rename.
+                _validate_quota_table(conn, "quota_snapshots_unscoped", scoped=False)
+                _validate_quota_table(conn, "quota_snapshots", scoped=False)
+                if conn.execute("SELECT 1 FROM quota_snapshots LIMIT 1").fetchone():
+                    raise sqlite3.DatabaseError("duplicate legacy quota snapshots contain data")
+                _execute_migration_statement(conn, "DROP TABLE quota_snapshots")
+                current_exists = False
+            else:
+                _validate_quota_table(conn, "quota_snapshots", scoped=True)
+                _validate_quota_table(conn, "quota_snapshots_unscoped", scoped=False)
+                return
+        if current_exists and not legacy_exists:
+            _validate_quota_table(conn, "quota_snapshots", scoped=False)
+            _execute_migration_statement(
+                conn, "ALTER TABLE quota_snapshots RENAME TO quota_snapshots_unscoped"
             )
-        if version < 2:
-            conn.executescript(SCHEMA_V2)
-        if version < 3:
-            conn.executescript(SCHEMA_V3)
-        if version < 4:
-            conn.executescript(SCHEMA_V4)
-        if version < 5:
-            conn.executescript(SCHEMA_V5)
-        if version < SCHEMA_VERSION:
-            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            legacy_exists = True
+            current_exists = False
+    elif not legacy_exists:
+        raise sqlite3.DatabaseError("quota_snapshots table missing before migration")
+    else:
+        _validate_quota_table(conn, "quota_snapshots_unscoped", scoped=False)
+
+    if legacy_exists and not current_exists:
+        _apply_schema(conn, SCOPED_QUOTA_TABLE_SQL)
+    if legacy_exists:
+        _validate_quota_table(conn, "quota_snapshots_unscoped", scoped=False)
+        _validate_quota_table(conn, "quota_snapshots", scoped=True)
+
+
+def _ensure_v5(conn: sqlite3.Connection) -> None:
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='quota_identity_observations'"
+    ).fetchone()
+    if not exists:
+        _apply_schema(conn, SCHEMA_V5)
+    _validate_table_sql(
+        conn,
+        "quota_identity_observations",
+        """
+        CREATE TABLE quota_identity_observations (
+            provider TEXT NOT NULL,
+            account_hash TEXT NOT NULL,
+            observed_at TEXT NOT NULL,
+            PRIMARY KEY(provider, account_hash)
+        )
+        """,
+    )
+
+
+def migrate(conn: sqlite3.Connection) -> None:
+    """Aplica migrações pendentes atomicamente; recupera V4 legado incompleto."""
+    with _write_lock:
+        if conn.in_transaction:
+            raise sqlite3.ProgrammingError("migrate() requer conexão sem transação ativa")
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        if version > SCHEMA_VERSION:
+            raise sqlite3.DatabaseError(
+                f"database schema {version} newer than supported {SCHEMA_VERSION}"
+            )
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if version < 1:
+                _apply_schema(conn, SCHEMA_V1)
+                conn.executemany(
+                    "INSERT OR IGNORE INTO provider_state (provider) VALUES (?)",
+                    [(p,) for p in PROVIDERS],
+                )
+            if version < 2:
+                _apply_schema(conn, SCHEMA_V2)
+            if version < 3:
+                existing = {
+                    row[0]
+                    for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                }
+                if not (
+                    "quota_snapshots_unscoped" in existing and "quota_snapshots" not in existing
+                ):
+                    _apply_schema(conn, SCHEMA_V3)
+            if version < 4:
+                _migrate_v4(conn)
+            if version < 5:
+                _ensure_v5(conn)
+            if version < SCHEMA_VERSION:
+                conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
 
 
 def put_quota_snapshot(
