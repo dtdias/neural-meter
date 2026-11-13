@@ -35,13 +35,13 @@ from neuralmeter.ui.view_model import (
 
 log = logging.getLogger(__name__)
 
-EXPANDED_SIZE = (380, 210)
+EXPANDED_SIZE = (550, 270)
 HUD_SIZE = EXPANDED_SIZE
-COMPACT_SIZE = (300, 116)
+COMPACT_SIZE = (320, 150)
 LEAVE_DELAY_MS = 600
 
 # Placeholders (cor, letra); icones vetoriais ficam para o empacotamento.
-MARKERS = {"claude": ("#d97757", "C"), "chatgpt": ("#10a37f", "G")}
+MARKERS = {"claude": ("#d97757", "C"), "chatgpt": ("#10a37f", "G"), "gemini": ("#4285f4", "M")}
 
 
 class UpdateBridge(QObject):
@@ -110,6 +110,7 @@ class ProviderRow(QWidget):
         lbl = QLabel("")
         lbl.setStyleSheet("color: #d0d0d0; font-size: 10px;")
         lbl.setMinimumWidth(170)
+        lbl.setWordWrap(True)
         return lbl
 
     @staticmethod
@@ -122,6 +123,37 @@ class ProviderRow(QWidget):
     def render(self, view: ProviderView, now: datetime) -> None:
         self.name_label.setText(view.label)
         self.model_label.setText(view.model_quota or view.last_model)
+        if view.quota_unknown:
+            self.name_label.setText("Gemini · experimental")
+            self.model_label.setText("cota oficial desconhecida")
+            self.model_label.setToolTip(
+                "Sem percentual ou reset oficial; contagem local de envios."
+            )
+            self.bar_5h.hide()
+            self.bar_week.hide()
+            narrow = self.text_week.minimumWidth() < 390
+            if narrow:
+                self.name_label.setText("Gemini · exp.")
+                self.model_label.setText("quota/reset desconhecidos")
+                self.text_5h.setText(f"{view.messages_5h} msgs/5h · quota desconhecida")
+                self.text_week.setText(
+                    f"{view.messages_7d} msgs/7d · ~{view.estimated_tokens_7d} tokens est."
+                )
+                self.setToolTip(
+                    f"Gemini experimental; quota/reset oficiais desconhecidos. "
+                    f"{view.messages_5h} mensagens observadas em 5h móvel; "
+                    f"{view.messages_7d} em 7d; ~{view.estimated_tokens_7d} tokens estimados."
+                )
+            else:
+                self.text_5h.setText(f"{view.messages_5h} mensagens observadas · 5h móvel")
+                self.text_week.setText(
+                    f"{view.messages_7d} mensagens · 7d\n"
+                    f"~{view.estimated_tokens_7d} tokens estimados; quota desconhecida"
+                )
+            return
+        self.setToolTip("")
+        self.bar_5h.show()
+        self.bar_week.show()
         if view.model_quota:
             self.model_label.setToolTip(
                 f"{view.model_quota}; último modelo observado: {view.last_model}"
@@ -170,6 +202,28 @@ class CompactRow(QWidget):
         layout.addWidget(self.text)
 
     def render(self, view: ProviderView, now: datetime) -> None:
+        if view.quota_unknown:
+            self.bar.hide()
+            narrow = bool(self.property("_nm_narrow"))
+            if narrow:
+                self.text.setText(
+                    f"Gemini · quota desconhecida\n"
+                    f"{view.messages_5h}/{view.messages_7d} msgs · "
+                    f"~{view.estimated_tokens_7d} tokens"
+                )
+            else:
+                self.text.setText(
+                    f"Experimental · quota desconhecida\n"
+                    f"{view.messages_5h} msgs/5h · {view.messages_7d} msgs/7d · "
+                    f"~{view.estimated_tokens_7d} tokens"
+                )
+            self.setToolTip(
+                f"Quota e reset oficiais desconhecidos. {view.messages_5h} mensagens em 5h móvel; "
+                f"{view.messages_7d} em 7d; ~{view.estimated_tokens_7d} tokens estimados "
+                "(~4 caracteres/token)."
+            )
+            return
+        self.bar.show()
         self.bar.setValue(round(view.pct_5h))
         ProviderRow._style(self.bar, view.level_5h)
         source = view.source_5h.capitalize()
@@ -242,7 +296,9 @@ class HudWindow(QWidget):
         header = QHBoxLayout()
         header.addWidget(self.title_label)
         header.addWidget(self.status_label, 1)
-        self.rows: dict[str, ProviderRow] = {"claude": ProviderRow(), "chatgpt": ProviderRow()}
+        self.rows: dict[str, ProviderRow] = {
+            p: ProviderRow() for p in ("claude", "chatgpt", "gemini")
+        }
         self.expanded_page = QWidget()
         layout = QVBoxLayout(self.expanded_page)
         layout.setContentsMargins(14, 10, 14, 10)
@@ -258,6 +314,7 @@ class HudWindow(QWidget):
         self.compact_rows: dict[str, CompactRow] = {
             "claude": CompactRow("claude"),
             "chatgpt": CompactRow("chatgpt"),
+            "gemini": CompactRow("gemini"),
         }
         for crow in self.compact_rows.values():
             clayout.addWidget(crow)
@@ -524,19 +581,30 @@ class HudWindow(QWidget):
 
     def _apply_mode(self) -> None:
         compact = self.effective_compact
-        size = COMPACT_SIZE if compact else EXPANDED_SIZE
+        desired = COMPACT_SIZE if compact else EXPANDED_SIZE
+        areas = _areas()
+        win = (self.x(), self.y(), self.width(), self.height())
+        area = pick_screen(win, areas) if areas else (0, 0, *desired)
+        size = (min(desired[0], area[2]), min(desired[1], area[3]))
+        # Constrain wrapped labels to current display width; preserve full meaning in tooltip.
+        text_width = 390 if size[0] >= 550 else max(100, size[0] - 190)
+        for row in self.rows.values():
+            for label in (row.text_5h, row.text_week):
+                label.setMinimumWidth(text_width)
+                label.setMaximumWidth(max(text_width, size[0] - 100))
+        self.compact_rows["gemini"].setProperty("_nm_narrow", size[0] < 400)
         self.stack.setCurrentWidget(self.compact_page if compact else self.expanded_page)
         if (self.width(), self.height()) == size:
+            self._render(self._clock())
             return
-        areas = _areas()
         if self.isVisible():
-            win = (self.x(), self.y(), self.width(), self.height())
             pos = anchor_resize(win, size, pick_screen(win, areas))
             pos = clamp_to_screens(pos, size, areas)
             self.setFixedSize(*size)
             self.move(*pos)
         else:
             self.setFixedSize(*size)
+        self._render(self._clock())
 
     def set_compact(self, value: bool) -> None:
         changed = value != self.compact

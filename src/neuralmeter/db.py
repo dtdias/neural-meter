@@ -10,6 +10,7 @@ from neuralmeter import config
 
 SCHEMA_VERSION = 5
 PROVIDERS = ("claude", "chatgpt")
+USAGE_PROVIDERS = (*PROVIDERS, "gemini")
 TS_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 # v2 (aditiva): tetos calibrados por modelo (auto-calibração RF04.2).
@@ -124,6 +125,11 @@ def utc_now_str() -> str:
 def _check_provider(provider: str) -> None:
     if provider not in PROVIDERS:
         raise ValueError(f"provider inválido: {provider!r}; esperado um de {PROVIDERS}")
+
+
+def _check_usage_provider(provider: str) -> None:
+    if provider not in USAGE_PROVIDERS:
+        raise ValueError(f"provider inválido: {provider!r}; esperado um de {USAGE_PROVIDERS}")
 
 
 def _execute_migration_statement(conn: sqlite3.Connection, statement: str) -> None:
@@ -498,7 +504,7 @@ def insert_usage_event(
     created_at: datetime | None = None,
 ) -> int:
     """Grava um evento de mensagem (só contagens, nunca o texto). Retorna o id."""
-    _check_provider(provider)
+    _check_usage_provider(provider)
     ts = utc_now_str() if created_at is None else to_db_ts(created_at)
     with _write_lock:
         cur = conn.execute(
@@ -533,7 +539,7 @@ def get_events_since(
     model_name: str | None = None,
 ) -> list[sqlite3.Row]:
     """Eventos do provedor com created_at >= since, ordem ASC."""
-    _check_provider(provider)
+    _check_usage_provider(provider)
     sql = "SELECT * FROM usage_events WHERE provider = ? AND created_at >= ?"
     params: list = [provider, to_db_ts(since)]
     if model_name is not None:

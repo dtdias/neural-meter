@@ -38,6 +38,7 @@ test("GET ignorado", () => {
 test("usage com model do body; soma user e ignora objetos", () => {
   const { out, cap } = setup();
   const b = JSON.stringify({
+    action: "next",
     model: "gpt-5",
     conversation_id: "c1",
     messages: [
@@ -151,6 +152,22 @@ test("body invalido -> onUnknown", () => {
   cap.onRequest("1", URL1, "POST", "{nope");
   assert.equal(out.length, 0);
   assert.deepEqual(unk, ["invalid_request_body"]);
+});
+
+test("non-submission action and zero-text user payload do not emit usage", () => {
+  const { out, cap } = setup();
+  cap.onRequest("1", URL1, "POST", JSON.stringify({ action: "metadata", messages: [msg("secret")] }));
+  cap.onRequest("2", URL1, "POST", JSON.stringify({ messages: [msg("secret")] }));
+  cap.onRequest("3", URL1, "POST", JSON.stringify({ action: "next", messages: [msg("")] }));
+  assert.deepEqual(out, []);
+});
+
+test("duplicate request id emits one usage observation", () => {
+  const { out, cap } = setup();
+  const request = body({ conversation_id: "dedupe" });
+  cap.onRequest("same-id", URL1, "POST", request);
+  cap.onRequest("same-id", URL1, "POST", request);
+  assert.equal(out.filter((event) => event.nm === "usage").length, 1);
 });
 
 test("emits e unknowns nao contem texto do prompt", () => {

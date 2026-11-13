@@ -3,6 +3,7 @@ import { createSseParser } from "./sse.js";
 
 const URL_RE = /^\/backend-api\/(f\/)?conversation$/;
 const LIMIT_CODES = new Set(["model_cap_exceeded", "rate_limit_exceeded"]);
+const SUBMIT_ACTIONS = new Set(["next", "variant", "continue"]);
 const KNOWN_TYPES = new Set([
   "message_stream_complete",
   "conversation_detail_metadata",
@@ -38,6 +39,7 @@ function toResetMs(v, nowMs) {
 
 export function createChatgptCapture({ emit, tracker, onUnknown = () => {}, now = Date.now }) {
   const pending = new Map();
+  const seenIds = new Set();
   const seenUnknown = new Set();
 
   function unknownOnce(type, info) {
@@ -100,6 +102,7 @@ export function createChatgptCapture({ emit, tracker, onUnknown = () => {}, now 
     onRequest(id, url, method, bodyText) {
       if (String(method || "GET").toUpperCase() !== "POST") return;
       if (!matchChatgptConversationUrl(url)) return;
+      if (seenIds.has(id)) return;
       let body;
       try {
         body = JSON.parse(bodyText);
@@ -108,6 +111,7 @@ export function createChatgptCapture({ emit, tracker, onUnknown = () => {}, now 
         onUnknown("invalid_request_body", {});
         return;
       }
+      if (!SUBMIT_ACTIONS.has(body.action)) return;
       let promptChars = 0;
       if (Array.isArray(body.messages)) {
         for (const m of body.messages) {
@@ -119,6 +123,10 @@ export function createChatgptCapture({ emit, tracker, onUnknown = () => {}, now 
           }
         }
       }
+      // Ignore replay/metadata/empty submissions; only count a textual user turn.
+      if (promptChars <= 0) return;
+      seenIds.add(id);
+      if (seenIds.size > 1000) seenIds.delete(seenIds.values().next().value);
       const model =
         typeof body.model === "string" && body.model && body.model !== "auto"
           ? body.model

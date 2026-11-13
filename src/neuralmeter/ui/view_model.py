@@ -14,6 +14,7 @@ from neuralmeter.engine import (
     get_claude_5h_snapshot,
     get_weekly_snapshot,
 )
+from neuralmeter.engine.gemini import get_gemini_activity
 
 Level = Literal["green", "yellow", "red"]
 
@@ -23,7 +24,7 @@ LEVEL_COLORS: dict[str, str] = {
     "red": "#ef4444",
 }
 
-PROVIDER_LABELS: dict[str, str] = {"claude": "Claude", "chatgpt": "ChatGPT"}
+PROVIDER_LABELS: dict[str, str] = {"claude": "Claude", "chatgpt": "ChatGPT", "gemini": "Gemini"}
 NO_DATA = "—"
 
 
@@ -87,6 +88,10 @@ class ProviderView:
     official_reset_5h: datetime | None = None
     official_reset_week: datetime | None = None
     quota_observed_at_5h: datetime | None = None
+    quota_unknown: bool = False
+    messages_5h: int = 0
+    messages_7d: int = 0
+    estimated_tokens_7d: int = 0
 
 
 @dataclass(frozen=True)
@@ -310,6 +315,7 @@ def load_hud_view(
 
     quota = get_quota_snapshots(conn, now)
     chatgpt_5h = get_chatgpt_5h_snapshot(conn, now, limits=chatgpt_limits).aggregate
+    gemini = get_gemini_activity(conn, now)
     return {
         "claude": build_provider_view(
             "claude", claude_5h, get_weekly_snapshot(conn, "claude", now), quota, now
@@ -317,27 +323,56 @@ def load_hud_view(
         "chatgpt": build_provider_view(
             "chatgpt", chatgpt_5h, get_weekly_snapshot(conn, "chatgpt", now)
         ),
+        "gemini": ProviderView(
+            provider="gemini",
+            label="Gemini",
+            pct_5h=0,
+            level_5h="green",
+            reset_5h=None,
+            pct_week=0,
+            level_week="green",
+            reset_week=None,
+            last_model=gemini.last_model or "experimental · cota desconhecida",
+            rate_limited=False,
+            source_5h="experimental · desconhecida",
+            source_week="experimental · desconhecida",
+            reset_source_5h="desconhecido",
+            reset_source_week="desconhecido",
+            quota_unknown=True,
+            messages_5h=gemini.messages_5h,
+            messages_7d=gemini.messages_7d,
+            estimated_tokens_7d=gemini.estimated_tokens_7d,
+        ),
     }
 
 
 @dataclass(frozen=True)
 class ConnState:
     clients: int = 0
-    tabs: dict[str, bool] = field(default_factory=lambda: {"claude": False, "chatgpt": False})
+    tabs: dict[str, bool] = field(
+        default_factory=lambda: {"claude": False, "chatgpt": False, "gemini": False}
+    )
     claude_tabs: int | None = None
 
 
 def apply_conn_update(state: ConnState, kind: str, payload: dict) -> ConnState:
     if kind == "conn":
         clients = max(0, int(payload.get("clients", 0)))
-        tabs = {"claude": False, "chatgpt": False} if clients == 0 else dict(state.tabs)
+        tabs = (
+            {"claude": False, "chatgpt": False, "gemini": False}
+            if clients == 0
+            else dict(state.tabs)
+        )
         return ConnState(
             clients=clients, tabs=tabs, claude_tabs=None if clients == 0 else state.claude_tabs
         )
     if kind == "status":
         raw = payload.get("tabs")
         if isinstance(raw, dict):
-            tabs = {k: bool(raw.get(k, state.tabs.get(k, False))) for k in ("claude", "chatgpt")}
+            tabs = {
+                k: bool(raw.get(k, state.tabs.get(k, False)))
+                for k in ("claude", "chatgpt", "gemini")
+            }
             raw_count = raw.get("claude_count")
             count = (
                 min(100, raw_count)

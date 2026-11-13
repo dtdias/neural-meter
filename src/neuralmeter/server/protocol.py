@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 MAX_PAYLOAD_BYTES = 65536
-PROVIDERS = ("claude", "chatgpt")
+PROVIDERS = ("claude", "chatgpt", "gemini")
 SCOPES = ("5h", "weekly")
 MAX_MODEL_LEN = 100
 _TS_FUTURE_TOLERANCE = timedelta(seconds=60)
@@ -153,6 +153,8 @@ def parse_message(raw: str | bytes, now: datetime):
         )
     if t == "limit":
         provider = _provider(d)
+        if provider == "gemini":
+            raise ProtocolError("unsupported Gemini quota; limits are unknown")
         scope = d.get("scope")
         if scope not in SCOPES:
             raise ProtocolError("invalid scope")

@@ -456,9 +456,9 @@ def test_get_events_since_filters_and_orders(conn):
 
 def test_invalid_provider(conn):
     with pytest.raises(ValueError):
-        db.insert_usage_event(conn, "gemini", "x")
+        db.insert_usage_event(conn, "codex", "x")
     with pytest.raises(ValueError):
-        db.get_events_since(conn, "gemini", datetime.now(UTC))
+        db.get_events_since(conn, "codex", datetime.now(UTC))
     with pytest.raises(ValueError):
         db.get_provider_state(conn, "gemini")
 

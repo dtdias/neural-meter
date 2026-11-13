@@ -45,17 +45,19 @@ The numbers are **estimates**, not a guarantee of the official limits. Providers
 
 Claude quota snapshots are experimental: route/schema lack validated browser capture. Account scope uses local HMAC; HUD requires exactly one confirmed Claude tab and unambiguous identity. Zero/multiple tabs, ambiguous identities or offline extension force estimated fallback. A switch without another quota response is not detectable. ChatGPT remains estimated; Codex quota is not treated as ChatGPT web quota.
 
+Gemini Web is also integrated experimentally: HUD shows observed submissions and approximate tokens only. Gemini quota, percentage and reset remain unknown; this relies on a public community description of an internal format, not a Google contract, and needs browser validation.
+
 ## What it delivers
 
 | Capture | Calculate | Show |
 | --- | --- | --- |
-| A passive extension (Manifest V3) reads headers, streams and session GETs on claude.ai and chatgpt.com, never sending prompts. | 5-hour and 7-day windows with context weighting for Claude, per-model expiry for ChatGPT, and auto-calibration. | An always-on-top HUD, a tray icon and a Windows toast when the 5-hour quota renews. |
+| Passive Manifest V3 extension captures Claude, ChatGPT and experimental Gemini without sending prompts. | Existing estimated/official windows; Gemini shows counts without invented quota. | Always-on-top HUD, tray icon and Windows toast when 5-hour quota renews. |
 
 ### Flow
 
 ```mermaid
 flowchart LR
-  A["claude.ai / chatgpt.com tab"] --> B["Extension reads passively"]
+  A["Claude / ChatGPT / experimental Gemini tab"] --> B["Extension reads passively"]
   B --> C["Local WebSocket 127.0.0.1:8765"]
   C --> D[("SQLite")]
   D --> E["Window engine 5h / 7d"]
@@ -128,7 +130,7 @@ flowchart LR
    1. Download `NeuralMeter-Bridge-<version>.zip` from the Release and unzip it into a permanent folder.
    2. Open `chrome://extensions` (or `edge://extensions`) and turn on **Developer mode**.
    3. Click **Load unpacked** and select the unzipped folder.
-3. Open NeuralMeter and use claude.ai / chatgpt.com as usual.
+3. Open NeuralMeter and use claude.ai / chatgpt.com as usual. Gemini Web shows experimental local counts; quota/reset remain unknown.
 
 To uninstall: Windows Settings, Apps, NeuralMeter. Data in `%LOCALAPPDATA%\NeuralMeter` is kept; delete the folder to remove everything.
 
@@ -154,7 +156,7 @@ uv run python scripts/build_exe.py --smoke             # dist/NeuralMeter.exe + 
 uv run python scripts/build_installer.py [--skip-exe]  # installer + extension zip
 ```
 
-Tests cover the window engine and calibration, the database and privacy, the protocol and WebSocket server, the view-model and HUD logic, and in the extension the Claude/ChatGPT captures, the SSE parser, the WebSocket client and the manifest. The installer requires Inno Setup 6 (`winget install --id JRSoftware.InnoSetup -e --scope user`); outputs go to `dist/`.
+Tests cover windows/calibration, DB/privacy, protocol/WS, HUD, and Claude/ChatGPT/Gemini capture (synthetic fixtures); Gemini capture has not been browser-validated. Installer requires Inno Setup 6 (`winget install --id JRSoftware.InnoSetup -e --scope user`); outputs go to `dist/`.
 
 ## Privacy and operation
 

@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from PySide6.QtCore import QEvent, QPoint, Qt
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QFontMetrics, QGuiApplication
 from PySide6.QtTest import QTest
 
 from neuralmeter.ui.hud import HudWindow, UpdateBridge
@@ -54,6 +54,111 @@ def test_renders_percent_and_color(qapp):
     assert "estimado" in row.text_5h.text()
     assert "reset estimado" in row.text_5h.text()
     assert row.model_label.text() == "sonnet"
+
+
+def test_gemini_hud_displays_unknown_quota_and_observed_counts(qapp):
+    now = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
+    view = replace(
+        _view("gemini", pct=0),
+        quota_unknown=True,
+        messages_5h=2,
+        messages_7d=4,
+        estimated_tokens_7d=30,
+    )
+    hud = HudWindow(view_loader=lambda _now: {"gemini": view}, clock=lambda: now)
+    hud.refresh()
+    expanded = hud.rows["gemini"]
+    compact = hud.compact_rows["gemini"]
+    assert "cota oficial desconhecida" in expanded.model_label.text()
+    assert "2 mensagens" in expanded.text_5h.text()
+    assert "~30 tokens estimados" in expanded.text_week.text()
+    assert "quota desconhecida" in compact.text.text()
+    assert "0%" not in compact.text.text()
+    assert expanded.bar_5h.isHidden() and compact.bar.isHidden()
+
+
+def _assert_label_fits(label):
+    bounds = QFontMetrics(label.font()).boundingRect(
+        label.rect(), int(Qt.TextFlag.TextWordWrap), label.text()
+    )
+    assert bounds.height() <= label.height(), (label.text(), bounds, label.rect())
+    assert label.rect().right() < label.parentWidget().rect().right()
+
+
+def test_gemini_actual_visible_geometry_large_counts_fit_compact_and_expanded(qapp, monkeypatch):
+    import neuralmeter.ui.hud as hud_module
+
+    monkeypatch.setattr(hud_module, "_areas", lambda: [(0, 0, 550, 300)])
+    view = replace(
+        _view("gemini", pct=0),
+        quota_unknown=True,
+        messages_5h=9_999_999_999,
+        messages_7d=99_999_999_999,
+        estimated_tokens_7d=999_999_999_999,
+    )
+    hud = HudWindow(
+        view_loader=lambda _now: {
+            "claude": _view("claude", pct=75),
+            "chatgpt": _view("chatgpt", pct=60),
+            "gemini": view,
+        }
+    )
+    hud.show()
+    qapp.processEvents()
+    row = hud.rows["gemini"]
+    assert row.isVisible() and row.text_5h.isVisible() and row.text_week.isVisible()
+    assert row.text_5h.width() >= 390 and row.text_week.width() >= 390
+    assert "quota desconhecida" in row.text_week.text()
+    _assert_label_fits(row.text_5h)
+    _assert_label_fits(row.text_week)
+
+    hud.set_compact(True)
+    qapp.processEvents()
+    compact = hud.compact_rows["gemini"]
+    assert compact.isVisible() and compact.text.isVisible()
+    assert compact.text.width() > 0
+    assert "quota" in compact.text.text()
+    assert "999999999999" in compact.toolTip()
+    _assert_label_fits(compact.text)
+    hud.close()
+
+
+def test_gemini_hud_condenses_and_clamps_to_small_available_screen(qapp, monkeypatch):
+    import neuralmeter.ui.hud as hud_module
+
+    monkeypatch.setattr(hud_module, "_areas", lambda: [(0, 0, 480, 200)])
+    view = replace(
+        _view("gemini", pct=0),
+        quota_unknown=True,
+        messages_5h=12345,
+        messages_7d=67890,
+        estimated_tokens_7d=987654,
+    )
+    hud = HudWindow(view_loader=lambda _now: {"gemini": view})
+    hud.show()
+    qapp.processEvents()
+    assert (hud.width(), hud.height()) == (480, 200)
+    row = hud.rows["gemini"]
+    assert row.name_label.text() == "Gemini · exp."
+    assert row.model_label.text() == "quota/reset desconhecidos"
+    assert "quota/reset oficiais desconhecidos" in row.toolTip()
+    assert "12345" in row.toolTip() and "987654" in row.toolTip()
+    assert hud.x() >= 0 and hud.y() >= 0
+    assert hud.x() + hud.width() <= 480 and hud.y() + hud.height() <= 200
+    assert row.text_week.width() < 390
+    assert row.geometry().bottom() < hud.expanded_page.rect().bottom()
+    for provider_row in hud.rows.values():
+        assert provider_row.geometry().bottom() < hud.expanded_page.rect().bottom()
+        for label in (
+            provider_row.name_label,
+            provider_row.model_label,
+            provider_row.text_5h,
+            provider_row.text_week,
+        ):
+            if label.isVisible():
+                assert label.geometry().right() <= provider_row.rect().right()
+                assert label.geometry().bottom() <= provider_row.rect().bottom()
+    hud.close()
 
 
 def test_conn_label_updates(qapp):
@@ -110,13 +215,13 @@ def test_bridge_cross_thread(qapp):
 
 def test_default_expanded_size(qapp):
     hud = HudWindow()
-    assert (hud.width(), hud.height()) == (380, 210)
+    assert (hud.width(), hud.height()) == (550, 270)
     assert hud.stack.currentWidget() is hud.expanded_page
 
 
 def test_compact_initial(qapp):
     hud = HudWindow(compact=True)
-    assert (hud.width(), hud.height()) == (300, 116)
+    assert (hud.width(), hud.height()) == (320, 150)
     assert hud.stack.currentWidget() is hud.compact_page
 
 
@@ -126,7 +231,7 @@ def test_set_compact_callback_once(qapp):
     hud.set_compact(True)
     hud.set_compact(True)
     assert calls == [True]
-    assert (hud.width(), hud.height()) == (300, 116)
+    assert (hud.width(), hud.height()) == (320, 150)
 
 
 def test_double_click_toggles(qapp):
@@ -143,11 +248,11 @@ def test_hover_expands_then_returns(qapp):
     calls = []
     hud = HudWindow(compact=True, on_compact_changed=calls.append)
     qapp.sendEvent(hud, QEvent(QEvent.Type.Enter))
-    assert (hud.width(), hud.height()) == (380, 210)
+    assert (hud.width(), hud.height()) == (550, 270)
     qapp.sendEvent(hud, QEvent(QEvent.Type.Leave))
     assert hud._leave_timer.isActive()
     hud._leave_timer.timeout.emit()
-    assert (hud.width(), hud.height()) == (300, 116)
+    assert (hud.width(), hud.height()) == (320, 150)
     assert hud.compact is True
     assert calls == []
 
@@ -156,7 +261,7 @@ def test_hover_ignored_while_dragging(qapp):
     hud = HudWindow(compact=True)
     hud._drag_offset = QPoint(1, 1)
     qapp.sendEvent(hud, QEvent(QEvent.Type.Enter))
-    assert (hud.width(), hud.height()) == (300, 116)
+    assert (hud.width(), hud.height()) == (320, 150)
 
 
 def test_compact_row_labels(qapp):
