@@ -43,6 +43,8 @@ Planos de Claude e ChatGPT têm janelas de 5 horas e limites semanais que só fi
 
 Os números são **estimativas**, não uma garantia dos limites oficiais. Os provedores não publicam as regras exatas; o app calcula a partir do que a extensão observa passivamente e se recalibra quando o servidor informa o reset real ou quando um bloqueio acontece.
 
+Snapshot Claude oficial é experimental: rota/esquema sem captura validada. Escopo conta usa HMAC local; HUD exige uma aba confirmada e identidade sem ambiguidade. Múltiplas abas/identidades ou extensão offline causam fallback estimado. Troca sem resposta de cota não é detectável. ChatGPT segue estimativa; sem inferir cota web via Codex.
+
 ## O que entrega
 
 | Capturar | Calcular | Mostrar |

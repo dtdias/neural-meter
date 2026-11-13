@@ -35,6 +35,10 @@ class RenewalTracker:
             if view.reset_5h is not None:
                 self._state[provider] = (view.reset_5h, renewal_eligible(view))
 
+    def forget(self, provider: str) -> None:
+        """Forget pending reset after identity/source becomes unsafe or changes."""
+        self._state.pop(provider, None)
+
     def due(self, now: datetime) -> list[str]:
         out: list[str] = []
         providers = sorted(

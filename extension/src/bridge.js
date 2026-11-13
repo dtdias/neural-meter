@@ -15,6 +15,7 @@
   })();
   const queue = [];
   let capture = null;
+  let quotaEnabled = false;
 
   function emit(m) {
     try {
@@ -27,7 +28,10 @@
 
   function handle(d) {
     try {
-      if (d.k === "req") capture.onRequest(d.id, d.url, d.method, d.body);
+    if (d.k === "req") capture.onRequest(d.id, d.url, d.method, d.body);
+      else if ((d.k === "quota" || d.k === "quotaIdentity") && quotaEnabled && typeof d.orgId === "string") {
+        emit({ nm: "quotaCandidate", payload: { orgId: d.orgId, body: d.k === "quota" ? d.body : null } });
+      }
       else if (d.k === "resp") capture.onResponse(d.id, d.status, d.body);
       else if (d.k === "chunk") capture.onChunk(d.id, d.text);
       else if (d.k === "end") capture.onEnd(d.id);
@@ -54,6 +58,7 @@
         onUnknown,
         now: Date.now,
       });
+      quotaEnabled = location.hostname === "claude.ai";
       while (queue.length) handle(queue.shift());
     } catch (e) {}
   })();

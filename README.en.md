@@ -43,6 +43,8 @@ Claude and ChatGPT plans have 5-hour windows and weekly limits that only become 
 
 The numbers are **estimates**, not a guarantee of the official limits. Providers do not publish the exact rules; the app computes from what the extension passively observes and recalibrates when the server reports the real reset or when a block happens.
 
+Claude quota snapshots are experimental: route/schema lack validated browser capture. Account scope uses local HMAC; HUD requires exactly one confirmed Claude tab and unambiguous identity. Zero/multiple tabs, ambiguous identities or offline extension force estimated fallback. A switch without another quota response is not detectable. ChatGPT remains estimated; Codex quota is not treated as ChatGPT web quota.
+
 ## What it delivers
 
 | Capture | Calculate | Show |

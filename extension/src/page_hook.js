@@ -21,6 +21,44 @@
     return rx.test(rx === matchers["claude.ai"] ? url.split("?")[0].split("#")[0] : url);
   };
 
+  const usageIdentity = (raw, base) => {
+    try {
+      const url = new URL(raw, base);
+      const match = /^\/api\/organizations\/([^/]{1,256})\/usage$/.exec(url.pathname);
+      if (url.protocol !== "https:" || url.hostname !== "claude.ai" || url.port || url.username || url.password || !match) return null;
+      return { url, orgId: match[1] };
+    } catch { return null; }
+  };
+
+  async function readBoundedJson(resp) {
+    let reader;
+    try {
+      const type = resp.headers.get("content-type") || "";
+      const lengthHeader = resp.headers.get("content-length");
+      const length = lengthHeader === null ? 0 : Number(lengthHeader);
+      if (!resp.ok || !/^application\/(?:[a-z0-9.+-]*\+)?json(?:\s*;|$)/i.test(type) ||
+          (lengthHeader !== null && (!Number.isFinite(length) || length > 65536))) return null;
+      reader = resp.clone().body?.getReader();
+      if (!reader) return null;
+      const chunks = [];
+      let size = 0;
+      for (;;) {
+        const part = await reader.read();
+        if (part.done) break;
+        size += part.value.byteLength;
+        if (size > 65536) { await reader.cancel(); return null; }
+        chunks.push(part.value);
+      }
+      const bytes = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+      return new TextDecoder().decode(bytes);
+    } catch {
+      try { await reader?.cancel(); } catch (e) {}
+      return null;
+    }
+  }
+
   async function pump(id, resp) {
     try {
       if (resp.status >= 400) {
@@ -45,7 +83,20 @@
     const p = orig.apply(this, arguments);
     try {
       // input Request sem init: ignora (nao le body, evita consumir stream)
-      const url = typeof input === "string" ? input : (input && input.url) || String(input);
+      const url = typeof input === "string" || input instanceof URL ? String(input) : (input && input.url) || String(input);
+      const method = (init && init.method) || (input && input.method) || "GET";
+      const initialQuota = typeof method === "string" && method.toUpperCase() === "GET" ? usageIdentity(url, location.href) : null;
+      if (location.hostname === "claude.ai" && initialQuota) {
+        p.then(async (resp) => {
+          try {
+            const finalQuota = usageIdentity(resp.url, location.href);
+            if (!finalQuota || finalQuota.url.origin !== initialQuota.url.origin || finalQuota.orgId !== initialQuota.orgId) return;
+            post({ k: "quotaIdentity", orgId: initialQuota.orgId });
+            const body = await readBoundedJson(resp);
+            if (body !== null) post({ k: "quota", body, orgId: initialQuota.orgId });
+          } catch (e) {}
+        }, () => {});
+      }
       if (init && typeof init.body === "string" && wanted(url)) {
         const id = "r" + ++seq;
         post({ k: "req", id, url, method: init.method || "GET", body: init.body });

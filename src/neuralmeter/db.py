@@ -7,7 +7,7 @@ from pathlib import Path
 
 from neuralmeter import config
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 5
 PROVIDERS = ("claude", "chatgpt")
 TS_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -20,6 +20,42 @@ CREATE TABLE IF NOT EXISTS model_limits (
     max_units REAL NOT NULL,
     updated_at TEXT NOT NULL,
     PRIMARY KEY (provider, model_key)
+);
+"""
+
+SCHEMA_V3 = """
+CREATE TABLE IF NOT EXISTS quota_snapshots (
+    provider TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    window_name TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    percent REAL NOT NULL CHECK(percent >= 0 AND percent <= 100),
+    reset_at TEXT,
+    observed_at TEXT NOT NULL,
+    PRIMARY KEY(provider, scope, window_name, model)
+);
+"""
+
+SCHEMA_V4 = """
+ALTER TABLE quota_snapshots RENAME TO quota_snapshots_unscoped;
+CREATE TABLE quota_snapshots (
+    provider TEXT NOT NULL,
+    account_hash TEXT NOT NULL,
+    window_name TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    percent REAL NOT NULL CHECK(percent >= 0 AND percent <= 100),
+    reset_at TEXT,
+    observed_at TEXT NOT NULL,
+    PRIMARY KEY(provider, account_hash, window_name, model)
+);
+"""
+
+SCHEMA_V5 = """
+CREATE TABLE quota_identity_observations (
+    provider TEXT NOT NULL,
+    account_hash TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    PRIMARY KEY(provider, account_hash)
 );
 """
 
@@ -101,9 +137,193 @@ def migrate(conn: sqlite3.Connection) -> None:
             )
         if version < 2:
             conn.executescript(SCHEMA_V2)
+        if version < 3:
+            conn.executescript(SCHEMA_V3)
+        if version < 4:
+            conn.executescript(SCHEMA_V4)
+        if version < 5:
+            conn.executescript(SCHEMA_V5)
         if version < SCHEMA_VERSION:
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             conn.commit()
+
+
+def put_quota_snapshot(
+    conn, provider, account_hash, window_name, model, percent, reset_at, observed_at
+):
+    """Persist provider-reported value; reject stale observations and expired resets."""
+    import math
+
+    if (
+        provider != "claude"
+        or not isinstance(account_hash, str)
+        or len(account_hash) != 64
+        or any(ch not in "0123456789abcdef" for ch in account_hash)
+        or window_name not in ("5h", "weekly", "opus", "sonnet")
+    ):
+        raise ValueError("invalid quota identity")
+    if (window_name in ("5h", "weekly") and model is not None) or (
+        window_name in ("opus", "sonnet") and model != window_name
+    ):
+        raise ValueError("invalid quota model/window combination")
+    if (
+        not isinstance(percent, (int, float))
+        or isinstance(percent, bool)
+        or not math.isfinite(percent)
+        or not 0 <= percent <= 100
+    ):
+        raise ValueError("invalid quota percent")
+    if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+        raise ValueError("datetime naive não permitido; use datetime com fuso")
+    observed = observed_at.astimezone(UTC).isoformat(sep=" ", timespec="microseconds")
+    reset = to_db_ts(reset_at) if reset_at else None
+    with _write_lock:
+        old = conn.execute(
+            "SELECT observed_at, reset_at FROM quota_snapshots "
+            "WHERE provider=? AND account_hash=? AND window_name=? AND model=?",
+            (provider, account_hash, window_name, model or ""),
+        ).fetchone()
+        if old and old[0] >= observed:
+            return False
+        if reset and reset <= observed:
+            return False
+        if old and old[1] and reset and old[1] > observed and reset < old[1]:
+            return False
+        if old and old[1] and old[1] > observed:
+            if reset is None:
+                reset = old[1]
+            if reset == old[1]:
+                prior = conn.execute(
+                    "SELECT percent FROM quota_snapshots WHERE provider=? AND account_hash=? "
+                    "AND window_name=? AND model=?",
+                    (provider, account_hash, window_name, model or ""),
+                ).fetchone()
+                if prior and percent < prior[0]:
+                    return False
+        conn.execute(
+            "INSERT INTO quota_snapshots VALUES(?,?,?,?,?,?,?) "
+            "ON CONFLICT(provider,account_hash,window_name,model) DO UPDATE SET "
+            "percent=excluded.percent,reset_at=excluded.reset_at,observed_at=excluded.observed_at",
+            (provider, account_hash, window_name, model or "", percent, reset, observed),
+        )
+        conn.commit()
+    return True
+
+
+def observe_quota_identity(conn, provider, account_hash, observed_at):
+    """Persist hashed account observation even when response contains no valid quota fields."""
+    if (
+        provider != "claude"
+        or not isinstance(account_hash, str)
+        or len(account_hash) != 64
+        or any(ch not in "0123456789abcdef" for ch in account_hash)
+    ):
+        raise ValueError("invalid quota identity")
+    if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+        raise ValueError("datetime naive não permitido; use datetime com fuso")
+    observed = observed_at.astimezone(UTC).isoformat(sep=" ", timespec="microseconds")
+    with _write_lock:
+        old = conn.execute(
+            "SELECT observed_at FROM quota_identity_observations "
+            "WHERE provider=? AND account_hash=?",
+            (provider, account_hash),
+        ).fetchone()
+        if old and old[0] >= observed:
+            return False
+        conn.execute(
+            "INSERT INTO quota_identity_observations VALUES(?,?,?) "
+            "ON CONFLICT(provider,account_hash) DO UPDATE SET observed_at=excluded.observed_at",
+            (provider, account_hash, observed),
+        )
+        conn.commit()
+    return True
+
+
+def get_quota_snapshots(conn, now):
+    """Return explicit fresh/stale/ambiguous state; legacy unscoped data stays quarantined."""
+    rows = conn.execute("SELECT * FROM quota_snapshots WHERE provider='claude'").fetchall()
+    identities = conn.execute(
+        "SELECT account_hash, observed_at FROM quota_identity_observations WHERE provider='claude'"
+    ).fetchall()
+    active_identities = {
+        row["account_hash"]
+        for row in identities
+        if (observed := datetime.fromisoformat(row["observed_at"]).replace(tzinfo=UTC)) <= now
+        and (now - observed).total_seconds() <= 600
+    }
+    if len(active_identities) > 1:
+        return {
+            "status": "ambiguous",
+            "windows": {},
+            "stale_windows": {},
+            "account_hash": None,
+            "identity_confirmed": False,
+        }
+    active_account = next(iter(active_identities), None)
+    grouped: dict[str, list[dict]] = {}
+    for row in rows:
+        grouped.setdefault(row["account_hash"], []).append(dict(row))
+    fresh_accounts: dict[str, dict] = {}
+    stale_accounts: dict[str, dict] = {}
+    for account_hash, account_rows in grouped.items():
+        fresh = {}
+        stale = {}
+        for item in account_rows:
+            observed = datetime.fromisoformat(item["observed_at"]).replace(tzinfo=UTC)
+            expired = bool(item["reset_at"] and from_db_ts(item["reset_at"]) <= now)
+            key = (item["window_name"], item["model"])
+            if observed <= now and (now - observed).total_seconds() <= 600 and not expired:
+                fresh[key] = item
+            else:
+                stale[key] = item
+        if fresh:
+            fresh_accounts[account_hash] = fresh
+        if stale:
+            stale_accounts[account_hash] = stale
+    if active_account and active_account in fresh_accounts:
+        account_hash, values = active_account, fresh_accounts[active_account]
+        return {
+            "status": "fresh",
+            "windows": values,
+            "stale_windows": stale_accounts.get(account_hash, {}),
+            "account_hash": account_hash,
+            "identity_confirmed": True,
+        }
+    if active_account and active_account in stale_accounts:
+        return {
+            "status": "stale",
+            "windows": {},
+            "stale_windows": stale_accounts[active_account],
+            "account_hash": active_account,
+            "identity_confirmed": True,
+        }
+    if not active_account and len(stale_accounts) > 1:
+        return {
+            "status": "ambiguous",
+            "windows": {},
+            "stale_windows": {},
+            "account_hash": None,
+            "identity_confirmed": False,
+        }
+    if not active_account and stale_accounts:
+        latest_hash, values = max(
+            stale_accounts.items(),
+            key=lambda pair: max(item["observed_at"] for item in pair[1].values()),
+        )
+        return {
+            "status": "stale",
+            "windows": {},
+            "stale_windows": values,
+            "account_hash": latest_hash,
+            "identity_confirmed": False,
+        }
+    return {
+        "status": "unavailable",
+        "windows": {},
+        "stale_windows": {},
+        "account_hash": active_account,
+        "identity_confirmed": active_account is not None,
+    }
 
 
 def connect_db(path: str | Path | None = None) -> sqlite3.Connection:

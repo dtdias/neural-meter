@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { sanitizeBridgeMessage as s, providerMatchesSender as pms } from "../src/bridge_msg.js";
+import { sanitizeBridgeMessage as s, providerMatchesSender as pms, sanitizeQuotaCandidate } from "../src/bridge_msg.js";
 
 test("providerMatchesSender", () => {
   assert.equal(pms("claude", "https://claude.ai/chat/1"), true);
@@ -9,6 +9,8 @@ test("providerMatchesSender", () => {
   assert.equal(pms("chatgpt", "https://claude.ai/"), false);
   assert.equal(pms("chatgpt", "https://chatgpt.com.evil.io/"), false);
   assert.equal(pms("chatgpt", "http://chatgpt.com/"), false);
+  assert.equal(pms("claude", "https://claude.ai:8443/"), false);
+  assert.equal(pms("claude", "https://user@claude.ai/"), false);
   assert.equal(pms("x", "https://chatgpt.com/"), false);
   assert.equal(pms("chatgpt", undefined), false);
 });
@@ -41,4 +43,23 @@ test("limit válido e inválido", () => {
   assert.equal(s({ nm: "limit", payload: { ...l, reset_at: 0 } }), null);
   assert.equal(s({ nm: "other", payload: l }), null);
   assert.equal(s(null), null);
+});
+
+test("quota valida fonte, janela e valores finitos", () => {
+  const q = { provider: "claude", account_hash: "a".repeat(64), window: "5h", percent: 0, observed_at: 1000, reset_at: 2000 };
+  assert.deepEqual(s({ nm: "quota", payload: q }), { type: "quota", ...q });
+  for (const bad of [{ provider: "chatgpt" }, { account_hash: "raw-org" }, { percent: NaN }, { percent: 101 }, { window: "codex" }, { reset_at: 999 }, { window: "5h", model: "opus" }, { window: "opus", model: "sonnet" }]) {
+    assert.equal(s({ nm: "quota", payload: { ...q, ...bad } }), null);
+  }
+  assert.equal(s({ nm: "quota", payload: { ...q, prompt: "secret" } }).prompt, undefined);
+});
+
+test("quota candidate aceita apenas sender Claude HTTPS exato e payload limitado", () => {
+  const msg = { nm: "quotaCandidate", payload: { orgId: "synthetic-org", body: "{}" } };
+  assert.deepEqual(sanitizeQuotaCandidate(msg, "https://claude.ai/"), msg.payload);
+  assert.deepEqual(sanitizeQuotaCandidate({ ...msg, payload: { orgId: "synthetic-org", body: null } }, "https://claude.ai/"), { orgId: "synthetic-org", body: null });
+  for (const url of ["https://evil.example/", "https://claude.ai:8443/", "http://claude.ai/"]) {
+    assert.equal(sanitizeQuotaCandidate(msg, url), null);
+  }
+  assert.equal(sanitizeQuotaCandidate({ ...msg, payload: { ...msg.payload, body: "x".repeat(65537) } }, "https://claude.ai/"), null);
 });
