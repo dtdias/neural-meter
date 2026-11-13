@@ -1,5 +1,6 @@
 """Camada SQLite local do NeuralMeter (schema PRD §6)."""
 
+import re
 import sqlite3
 import threading
 from datetime import UTC, datetime
@@ -7,7 +8,7 @@ from pathlib import Path
 
 from neuralmeter import config
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 5
 PROVIDERS = ("claude", "chatgpt")
 TS_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -20,6 +21,42 @@ CREATE TABLE IF NOT EXISTS model_limits (
     max_units REAL NOT NULL,
     updated_at TEXT NOT NULL,
     PRIMARY KEY (provider, model_key)
+);
+"""
+
+SCHEMA_V3 = """
+CREATE TABLE IF NOT EXISTS quota_snapshots (
+    provider TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    window_name TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    percent REAL NOT NULL CHECK(percent >= 0 AND percent <= 100),
+    reset_at TEXT,
+    observed_at TEXT NOT NULL,
+    PRIMARY KEY(provider, scope, window_name, model)
+);
+"""
+
+SCHEMA_V4 = """
+ALTER TABLE quota_snapshots RENAME TO quota_snapshots_unscoped;
+CREATE TABLE quota_snapshots (
+    provider TEXT NOT NULL,
+    account_hash TEXT NOT NULL,
+    window_name TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    percent REAL NOT NULL CHECK(percent >= 0 AND percent <= 100),
+    reset_at TEXT,
+    observed_at TEXT NOT NULL,
+    PRIMARY KEY(provider, account_hash, window_name, model)
+);
+"""
+
+SCHEMA_V5 = """
+CREATE TABLE quota_identity_observations (
+    provider TEXT NOT NULL,
+    account_hash TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    PRIMARY KEY(provider, account_hash)
 );
 """
 
@@ -89,21 +126,353 @@ def _check_provider(provider: str) -> None:
         raise ValueError(f"provider inválido: {provider!r}; esperado um de {PROVIDERS}")
 
 
-def migrate(conn: sqlite3.Connection) -> None:
-    """Aplica migrações pendentes via PRAGMA user_version. Idempotente."""
-    with _write_lock:
-        version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version < 1:
-            conn.executescript(SCHEMA_V1)
-            conn.executemany(
-                "INSERT OR IGNORE INTO provider_state (provider) VALUES (?)",
-                [(p,) for p in PROVIDERS],
+def _execute_migration_statement(conn: sqlite3.Connection, statement: str) -> None:
+    conn.execute(statement)
+
+
+def _apply_schema(conn: sqlite3.Connection, schema: str) -> None:
+    statement = ""
+    for line in schema.splitlines():
+        statement += line + "\n"
+        if sqlite3.complete_statement(statement):
+            if statement.strip():
+                _execute_migration_statement(conn, statement)
+            statement = ""
+    if statement.strip():
+        raise sqlite3.OperationalError("incomplete migration SQL")
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in conn.execute(f'PRAGMA table_info("{table}")')}
+
+
+def _normalized_table_sql(conn: sqlite3.Connection, table: str) -> str:
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone()
+    if row is None or row[0] is None:
+        raise sqlite3.DatabaseError(f"missing table definition: {table}")
+    return re.sub(r"[\s\"`\[\]]+", "", row[0]).lower().rstrip(";")
+
+
+def _validate_table_sql(conn: sqlite3.Connection, table: str, expected: str) -> None:
+    actual = _normalized_table_sql(conn, table)
+    normalized_expected = re.sub(r"[\s\"`\[\]]+", "", expected).lower().rstrip(";")
+    if actual != normalized_expected:
+        raise sqlite3.DatabaseError(f"incompatible schema for {table}")
+
+
+LEGACY_QUOTA_TABLE_SQL = """
+CREATE TABLE quota_snapshots (
+    provider TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    window_name TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    percent REAL NOT NULL CHECK(percent >= 0 AND percent <= 100),
+    reset_at TEXT,
+    observed_at TEXT NOT NULL,
+    PRIMARY KEY(provider, scope, window_name, model)
+)
+"""
+
+SCOPED_QUOTA_TABLE_SQL = """
+CREATE TABLE quota_snapshots (
+    provider TEXT NOT NULL,
+    account_hash TEXT NOT NULL,
+    window_name TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    percent REAL NOT NULL CHECK(percent >= 0 AND percent <= 100),
+    reset_at TEXT,
+    observed_at TEXT NOT NULL,
+    PRIMARY KEY(provider, account_hash, window_name, model)
+);
+"""
+
+
+def _validate_quota_table(conn: sqlite3.Connection, table: str, *, scoped: bool) -> None:
+    expected = SCOPED_QUOTA_TABLE_SQL if scoped else LEGACY_QUOTA_TABLE_SQL
+    _validate_table_sql(
+        conn, table, expected.replace("CREATE TABLE quota_snapshots", f"CREATE TABLE {table}")
+    )
+
+
+def _migrate_v4(conn: sqlite3.Connection) -> None:
+    names = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    legacy_exists = "quota_snapshots_unscoped" in names
+    current_exists = "quota_snapshots" in names
+
+    if current_exists:
+        if legacy_exists:
+            if _table_columns(conn, "quota_snapshots") == _table_columns(
+                conn, "quota_snapshots_unscoped"
+            ):
+                # Old executescript sequence can retry V3 after V4's committed rename.
+                _validate_quota_table(conn, "quota_snapshots_unscoped", scoped=False)
+                _validate_quota_table(conn, "quota_snapshots", scoped=False)
+                if conn.execute("SELECT 1 FROM quota_snapshots LIMIT 1").fetchone():
+                    raise sqlite3.DatabaseError("duplicate legacy quota snapshots contain data")
+                _execute_migration_statement(conn, "DROP TABLE quota_snapshots")
+                current_exists = False
+            else:
+                _validate_quota_table(conn, "quota_snapshots", scoped=True)
+                _validate_quota_table(conn, "quota_snapshots_unscoped", scoped=False)
+                return
+        if current_exists and not legacy_exists:
+            _validate_quota_table(conn, "quota_snapshots", scoped=False)
+            _execute_migration_statement(
+                conn, "ALTER TABLE quota_snapshots RENAME TO quota_snapshots_unscoped"
             )
-        if version < 2:
-            conn.executescript(SCHEMA_V2)
-        if version < SCHEMA_VERSION:
-            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            legacy_exists = True
+            current_exists = False
+    elif not legacy_exists:
+        raise sqlite3.DatabaseError("quota_snapshots table missing before migration")
+    else:
+        _validate_quota_table(conn, "quota_snapshots_unscoped", scoped=False)
+
+    if legacy_exists and not current_exists:
+        _apply_schema(conn, SCOPED_QUOTA_TABLE_SQL)
+    if legacy_exists:
+        _validate_quota_table(conn, "quota_snapshots_unscoped", scoped=False)
+        _validate_quota_table(conn, "quota_snapshots", scoped=True)
+
+
+def _ensure_v5(conn: sqlite3.Connection) -> None:
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='quota_identity_observations'"
+    ).fetchone()
+    if not exists:
+        _apply_schema(conn, SCHEMA_V5)
+    _validate_table_sql(
+        conn,
+        "quota_identity_observations",
+        """
+        CREATE TABLE quota_identity_observations (
+            provider TEXT NOT NULL,
+            account_hash TEXT NOT NULL,
+            observed_at TEXT NOT NULL,
+            PRIMARY KEY(provider, account_hash)
+        )
+        """,
+    )
+
+
+def migrate(conn: sqlite3.Connection) -> None:
+    """Aplica migrações pendentes atomicamente; recupera V4 legado incompleto."""
+    with _write_lock:
+        if conn.in_transaction:
+            raise sqlite3.ProgrammingError("migrate() requer conexão sem transação ativa")
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        if version > SCHEMA_VERSION:
+            raise sqlite3.DatabaseError(
+                f"database schema {version} newer than supported {SCHEMA_VERSION}"
+            )
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if version < 1:
+                _apply_schema(conn, SCHEMA_V1)
+                conn.executemany(
+                    "INSERT OR IGNORE INTO provider_state (provider) VALUES (?)",
+                    [(p,) for p in PROVIDERS],
+                )
+            if version < 2:
+                _apply_schema(conn, SCHEMA_V2)
+            if version < 3:
+                existing = {
+                    row[0]
+                    for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                }
+                if not (
+                    "quota_snapshots_unscoped" in existing and "quota_snapshots" not in existing
+                ):
+                    _apply_schema(conn, SCHEMA_V3)
+            if version < 4:
+                _migrate_v4(conn)
+            if version < 5:
+                _ensure_v5(conn)
+            if version < SCHEMA_VERSION:
+                conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+
+
+def put_quota_snapshot(
+    conn, provider, account_hash, window_name, model, percent, reset_at, observed_at
+):
+    """Persist provider-reported value; reject stale observations and expired resets."""
+    import math
+
+    if (
+        provider != "claude"
+        or not isinstance(account_hash, str)
+        or len(account_hash) != 64
+        or any(ch not in "0123456789abcdef" for ch in account_hash)
+        or window_name not in ("5h", "weekly", "opus", "sonnet")
+    ):
+        raise ValueError("invalid quota identity")
+    if (window_name in ("5h", "weekly") and model is not None) or (
+        window_name in ("opus", "sonnet") and model != window_name
+    ):
+        raise ValueError("invalid quota model/window combination")
+    if (
+        not isinstance(percent, (int, float))
+        or isinstance(percent, bool)
+        or not math.isfinite(percent)
+        or not 0 <= percent <= 100
+    ):
+        raise ValueError("invalid quota percent")
+    if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+        raise ValueError("datetime naive não permitido; use datetime com fuso")
+    observed = observed_at.astimezone(UTC).isoformat(sep=" ", timespec="microseconds")
+    reset = to_db_ts(reset_at) if reset_at else None
+    with _write_lock:
+        old = conn.execute(
+            "SELECT observed_at, reset_at FROM quota_snapshots "
+            "WHERE provider=? AND account_hash=? AND window_name=? AND model=?",
+            (provider, account_hash, window_name, model or ""),
+        ).fetchone()
+        if old and old[0] >= observed:
+            return False
+        if reset and reset <= observed:
+            return False
+        if old and old[1] and reset and old[1] > observed and reset < old[1]:
+            return False
+        if old and old[1] and old[1] > observed:
+            if reset is None:
+                reset = old[1]
+            if reset == old[1]:
+                prior = conn.execute(
+                    "SELECT percent FROM quota_snapshots WHERE provider=? AND account_hash=? "
+                    "AND window_name=? AND model=?",
+                    (provider, account_hash, window_name, model or ""),
+                ).fetchone()
+                if prior and percent < prior[0]:
+                    return False
+        conn.execute(
+            "INSERT INTO quota_snapshots VALUES(?,?,?,?,?,?,?) "
+            "ON CONFLICT(provider,account_hash,window_name,model) DO UPDATE SET "
+            "percent=excluded.percent,reset_at=excluded.reset_at,observed_at=excluded.observed_at",
+            (provider, account_hash, window_name, model or "", percent, reset, observed),
+        )
+        conn.commit()
+    return True
+
+
+def observe_quota_identity(conn, provider, account_hash, observed_at):
+    """Persist hashed account observation even when response contains no valid quota fields."""
+    if (
+        provider != "claude"
+        or not isinstance(account_hash, str)
+        or len(account_hash) != 64
+        or any(ch not in "0123456789abcdef" for ch in account_hash)
+    ):
+        raise ValueError("invalid quota identity")
+    if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+        raise ValueError("datetime naive não permitido; use datetime com fuso")
+    observed = observed_at.astimezone(UTC).isoformat(sep=" ", timespec="microseconds")
+    with _write_lock:
+        old = conn.execute(
+            "SELECT observed_at FROM quota_identity_observations "
+            "WHERE provider=? AND account_hash=?",
+            (provider, account_hash),
+        ).fetchone()
+        if old and old[0] >= observed:
+            return False
+        conn.execute(
+            "INSERT INTO quota_identity_observations VALUES(?,?,?) "
+            "ON CONFLICT(provider,account_hash) DO UPDATE SET observed_at=excluded.observed_at",
+            (provider, account_hash, observed),
+        )
+        conn.commit()
+    return True
+
+
+def get_quota_snapshots(conn, now):
+    """Return explicit fresh/stale/ambiguous state; legacy unscoped data stays quarantined."""
+    rows = conn.execute("SELECT * FROM quota_snapshots WHERE provider='claude'").fetchall()
+    identities = conn.execute(
+        "SELECT account_hash, observed_at FROM quota_identity_observations WHERE provider='claude'"
+    ).fetchall()
+    active_identities = {
+        row["account_hash"]
+        for row in identities
+        if (observed := datetime.fromisoformat(row["observed_at"]).replace(tzinfo=UTC)) <= now
+        and (now - observed).total_seconds() <= 600
+    }
+    if len(active_identities) > 1:
+        return {
+            "status": "ambiguous",
+            "windows": {},
+            "stale_windows": {},
+            "account_hash": None,
+            "identity_confirmed": False,
+        }
+    active_account = next(iter(active_identities), None)
+    grouped: dict[str, list[dict]] = {}
+    for row in rows:
+        grouped.setdefault(row["account_hash"], []).append(dict(row))
+    fresh_accounts: dict[str, dict] = {}
+    stale_accounts: dict[str, dict] = {}
+    for account_hash, account_rows in grouped.items():
+        fresh = {}
+        stale = {}
+        for item in account_rows:
+            observed = datetime.fromisoformat(item["observed_at"]).replace(tzinfo=UTC)
+            expired = bool(item["reset_at"] and from_db_ts(item["reset_at"]) <= now)
+            key = (item["window_name"], item["model"])
+            if observed <= now and (now - observed).total_seconds() <= 600 and not expired:
+                fresh[key] = item
+            else:
+                stale[key] = item
+        if fresh:
+            fresh_accounts[account_hash] = fresh
+        if stale:
+            stale_accounts[account_hash] = stale
+    if active_account and active_account in fresh_accounts:
+        account_hash, values = active_account, fresh_accounts[active_account]
+        return {
+            "status": "fresh",
+            "windows": values,
+            "stale_windows": stale_accounts.get(account_hash, {}),
+            "account_hash": account_hash,
+            "identity_confirmed": True,
+        }
+    if active_account and active_account in stale_accounts:
+        return {
+            "status": "stale",
+            "windows": {},
+            "stale_windows": stale_accounts[active_account],
+            "account_hash": active_account,
+            "identity_confirmed": True,
+        }
+    if not active_account and len(stale_accounts) > 1:
+        return {
+            "status": "ambiguous",
+            "windows": {},
+            "stale_windows": {},
+            "account_hash": None,
+            "identity_confirmed": False,
+        }
+    if not active_account and stale_accounts:
+        latest_hash, values = max(
+            stale_accounts.items(),
+            key=lambda pair: max(item["observed_at"] for item in pair[1].values()),
+        )
+        return {
+            "status": "stale",
+            "windows": {},
+            "stale_windows": values,
+            "account_hash": latest_hash,
+            "identity_confirmed": False,
+        }
+    return {
+        "status": "unavailable",
+        "windows": {},
+        "stale_windows": {},
+        "account_hash": active_account,
+        "identity_confirmed": active_account is not None,
+    }
 
 
 def connect_db(path: str | Path | None = None) -> sqlite3.Connection:

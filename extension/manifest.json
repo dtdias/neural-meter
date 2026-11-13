@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NeuralMeter Bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Leitura passiva de uso de claude.ai e chatgpt.com para o NeuralMeter (local).",
   "minimum_chrome_version": "116",
   "icons": {
@@ -17,7 +17,7 @@
       "32": "icons/icon32.png"
     }
   },
-  "permissions": ["alarms"],
+  "permissions": ["alarms", "storage"],
   "host_permissions": ["https://claude.ai/*", "https://chatgpt.com/*"],
   "background": {
     "service_worker": "src/background.js",

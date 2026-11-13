@@ -3,7 +3,12 @@
 import sqlite3
 from datetime import UTC, datetime
 
-from neuralmeter.db import get_provider_state, insert_usage_event
+from neuralmeter.db import (
+    get_provider_state,
+    insert_usage_event,
+    observe_quota_identity,
+    put_quota_snapshot,
+)
 from neuralmeter.engine import (
     apply_block_calibration,
     is_new_block,
@@ -13,7 +18,15 @@ from neuralmeter.engine import (
 )
 from neuralmeter.engine.weight import DEFAULT_WEIGHT_PARAMS, WeightParams, weight_for_usage
 from neuralmeter.privacy import PrivacySettings, hash_conversation_id
-from neuralmeter.server.protocol import Hello, Limit, Ping, Status, Usage
+from neuralmeter.server.protocol import (
+    Hello,
+    Limit,
+    Ping,
+    Quota,
+    QuotaObservation,
+    Status,
+    Usage,
+)
 
 
 def handle_message(
@@ -27,6 +40,27 @@ def handle_message(
     Peso Claude por contexto (RF01.3): PREMISSA em progress.md Decisoes (2026-11-10)."""
     if isinstance(msg, Ping):
         return {"type": "pong"}, None
+    if isinstance(msg, Quota):
+        accepted = put_quota_snapshot(
+            conn,
+            msg.provider,
+            msg.account_hash,
+            msg.window,
+            msg.model,
+            msg.percent,
+            msg.reset_at,
+            msg.observed_at,
+        )
+        return {"type": "ack", "ref": "quota", "accepted": accepted}, (
+            "quota",
+            {"provider": msg.provider},
+        ) if accepted else None
+    if isinstance(msg, QuotaObservation):
+        accepted = observe_quota_identity(conn, msg.provider, msg.account_hash, msg.observed_at)
+        return {"type": "ack", "ref": "quota_observation", "accepted": accepted}, (
+            "quota",
+            {"provider": msg.provider},
+        ) if accepted else None
     if isinstance(msg, Usage):
         weight = weight_for_usage(msg.provider, msg.prompt_chars, msg.context_chars, weight_params)
         conv_id = msg.conversation_id

@@ -2,6 +2,7 @@
 
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from PySide6.QtCore import QObject, QPoint, Qt, QTimer, Signal, Slot
@@ -27,14 +28,16 @@ from neuralmeter.ui.view_model import (
     apply_conn_update,
     conn_label,
     format_countdown,
-    remaining_label,
+    level_for_percent,
+    model_quota_label,
+    resolve_model_quotas,
 )
 
 log = logging.getLogger(__name__)
 
-EXPANDED_SIZE = (300, 190)
+EXPANDED_SIZE = (380, 210)
 HUD_SIZE = EXPANDED_SIZE
-COMPACT_SIZE = (200, 56)
+COMPACT_SIZE = (300, 116)
 LEAVE_DELAY_MS = 600
 
 # Placeholders (cor, letra); icones vetoriais ficam para o empacotamento.
@@ -106,7 +109,7 @@ class ProviderRow(QWidget):
     def _make_text() -> QLabel:
         lbl = QLabel("")
         lbl.setStyleSheet("color: #d0d0d0; font-size: 10px;")
-        lbl.setMinimumWidth(110)
+        lbl.setMinimumWidth(170)
         return lbl
 
     @staticmethod
@@ -118,14 +121,25 @@ class ProviderRow(QWidget):
 
     def render(self, view: ProviderView, now: datetime) -> None:
         self.name_label.setText(view.label)
-        self.model_label.setText(view.last_model)
+        self.model_label.setText(view.model_quota or view.last_model)
+        if view.model_quota:
+            self.model_label.setToolTip(
+                f"{view.model_quota}; último modelo observado: {view.last_model}"
+            )
         for bar, text, pct, level, reset in (
             (self.bar_5h, self.text_5h, view.pct_5h, view.level_5h, view.reset_5h),
             (self.bar_week, self.text_week, view.pct_week, view.level_week, view.reset_week),
         ):
             bar.setValue(round(pct))
             self._style(bar, level)
-            text.setText(f"{round(pct)}% · reset {format_countdown(reset, now)}")
+            source = view.source_5h if bar is self.bar_5h else view.source_week
+            reset_source = view.reset_source_5h if bar is self.bar_5h else view.reset_source_week
+            reset_label = (
+                f"reset estimado (fonte omitiu): {format_countdown(reset, now)}"
+                if reset_source == "não informado pela fonte"
+                else f"reset {reset_source}: {format_countdown(reset, now)}"
+            )
+            text.setText(f"{round(pct)}% · {source}\n{reset_label}")
 
 
 class CompactRow(QWidget):
@@ -146,7 +160,8 @@ class CompactRow(QWidget):
         self.bar.setFixedHeight(6)
         self.text = QLabel("")
         self.text.setStyleSheet("color: #d0d0d0; font-size: 10px;")
-        self.text.setMinimumWidth(56)
+        self.text.setMinimumWidth(150)
+        self.text.setWordWrap(True)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
@@ -154,10 +169,19 @@ class CompactRow(QWidget):
         layout.addWidget(self.bar, 1)
         layout.addWidget(self.text)
 
-    def render(self, view: ProviderView) -> None:
+    def render(self, view: ProviderView, now: datetime) -> None:
         self.bar.setValue(round(view.pct_5h))
         ProviderRow._style(self.bar, view.level_5h)
-        self.text.setText(remaining_label(view))
+        source = view.source_5h.capitalize()
+        reset_source = view.reset_source_5h
+        reset_info = (
+            f"reset estimado (fonte omitiu): {format_countdown(view.reset_5h, now)}"
+            if reset_source == "não informado pela fonte"
+            else f"reset {reset_source}: {format_countdown(view.reset_5h, now)}"
+        )
+        state_label = "Bloqueado · " if view.rate_limited else ""
+        self.text.setText(f"{state_label}{source}\n{round(view.pct_5h)}% usado · {reset_info}")
+        self.setToolTip("; ".join(part for part in (view.model_quota,) if part))
 
 
 def _default_loader(now: datetime) -> dict:
@@ -188,6 +212,9 @@ class HudWindow(QWidget):
         self._views: dict[str, ProviderView] = {}
         self._conn = ConnState()
         self._renewal = RenewalTracker()
+        self._renewal_source: dict[str, tuple[str, ...]] = {}
+        self._renewal_armed: set[str] = set()
+        self._renewal_invalidated_at: dict[str, datetime] = {}
         self.compact = compact
         self.on_compact_changed = on_compact_changed
         self._hover_expanded = False
@@ -258,12 +285,194 @@ class HudWindow(QWidget):
         p.setBrush(QColor(24, 24, 28, 235))
         p.drawRoundedRect(self.rect(), 12, 12)
 
+    def _effective_views(self, now: datetime) -> dict[str, ProviderView]:
+        views = dict(self._views)
+        view = views.get("claude")
+        if view is None:
+            return views
+        if self._conn.claude_tabs != 1:
+            if self._conn.claude_tabs is None:
+                identity_label = "estimado · identidade não confirmada"
+            elif self._conn.claude_tabs == 0:
+                identity_label = "estimado · sem aba Claude ativa"
+            else:
+                identity_label = "estimado · múltiplas abas"
+            view = replace(
+                view,
+                pct_5h=view.estimated_pct_5h if view.estimated_pct_5h is not None else view.pct_5h,
+                level_5h=level_for_percent(view.estimated_pct_5h or 0, view.estimated_blocked_5h),
+                reset_5h=view.estimated_reset_5h,
+                pct_week=view.estimated_pct_week
+                if view.estimated_pct_week is not None
+                else view.pct_week,
+                level_week=level_for_percent(
+                    view.estimated_pct_week or 0, view.estimated_blocked_week
+                ),
+                reset_week=view.estimated_reset_week,
+                rate_limited=view.estimated_rate_limited,
+                source_5h=identity_label,
+                source_week=identity_label,
+                reset_source_5h="estimado",
+                reset_source_week="estimado",
+                model_quota="",
+                model_quotas=(),
+                official_until_5h=None,
+                official_until_week=None,
+                quota_identity=None,
+                quota_state="unavailable",
+                quota_fresh_5h=False,
+                quota_fresh_week=False,
+                official_reset_5h=None,
+                official_reset_week=None,
+                identity_state=(
+                    "unconfirmed"
+                    if self._conn.claude_tabs is None
+                    else "no_tab"
+                    if self._conn.claude_tabs == 0
+                    else "multiple_tabs"
+                ),
+            )
+        else:
+            models = resolve_model_quotas(view.model_quotas, now)
+            view = replace(view, model_quotas=models, model_quota=model_quota_label(models))
+            updates = {}
+            if (
+                view.quota_fresh_5h
+                and view.identity_state == "confirmed"
+                and view.quota_identity
+                and view.official_reset_5h
+                and view.official_until_5h == view.official_reset_5h
+                and now >= view.official_reset_5h
+            ):
+                view = replace(view, renewal_boundary_5h=view.official_reset_5h)
+            if view.official_until_5h and now >= view.official_until_5h:
+                pct = view.estimated_pct_5h if view.estimated_pct_5h is not None else 0
+                updates.update(
+                    pct_5h=pct,
+                    level_5h=level_for_percent(pct, view.estimated_blocked_5h),
+                    reset_5h=view.estimated_reset_5h,
+                    source_5h="estimado · desatualizado",
+                    reset_source_5h="estimado",
+                    quota_fresh_5h=False,
+                    official_reset_5h=None,
+                )
+            if view.official_until_week and now >= view.official_until_week:
+                pct = view.estimated_pct_week if view.estimated_pct_week is not None else 0
+                updates.update(
+                    pct_week=pct,
+                    level_week=level_for_percent(pct, view.estimated_blocked_week),
+                    reset_week=view.estimated_reset_week,
+                    source_week="estimado · desatualizado",
+                    reset_source_week="estimado",
+                    quota_fresh_week=False,
+                    official_reset_week=None,
+                )
+            if updates:
+                updates["rate_limited"] = (
+                    (updates.get("pct_5h", view.pct_5h) >= 100 and not view.estimated_blocked_5h)
+                    or (
+                        updates.get("pct_week", view.pct_week) >= 100
+                        and not view.estimated_blocked_week
+                    )
+                    or view.estimated_rate_limited
+                )
+                view = replace(view, **updates)
+        views["claude"] = view
+        return views
+
     def _render(self, now: datetime) -> None:
+        effective = self._effective_views(now)
         for provider, row in self.rows.items():
-            view = self._views.get(provider)
+            view = effective.get(provider)
             if view is not None:
                 row.render(view, now)
-                self.compact_rows[provider].render(view)
+                self.compact_rows[provider].render(view, now)
+
+    def _observe_renewals(self, now: datetime) -> None:
+        views = self._effective_views(now)
+        view = views.get("claude")
+        if view is not None:
+            unsafe_identity = (
+                self._conn.clients <= 0
+                or self._conn.claude_tabs != 1
+                or view.identity_state != "confirmed"
+            )
+            has_official_generation = (
+                view.quota_fresh_5h
+                or view.official_reset_5h is not None
+                or "claude" in self._renewal_armed
+            )
+            if unsafe_identity and has_official_generation:
+                self._renewal.forget("claude")
+                self._renewal_armed.discard("claude")
+                self._renewal_invalidated_at.setdefault("claude", now)
+            else:
+                signature = (
+                    view.quota_state,
+                    view.identity_state,
+                    str(view.quota_fresh_5h),
+                    str(view.official_reset_5h or ""),
+                    view.quota_identity or "",
+                    view.reset_5h.isoformat() if view.reset_5h else "",
+                    str(view.quota_observed_at_5h or ""),
+                )
+                previous = self._renewal_source.get("claude")
+                confirmed_due = (
+                    view.renewal_boundary_5h is not None
+                    and view.renewal_boundary_5h <= now
+                    and previous is not None
+                    and previous[4] == (view.quota_identity or "")
+                    and previous[5] == view.renewal_boundary_5h.isoformat()
+                    and "claude" in self._renewal_armed
+                )
+                if confirmed_due:
+                    # Keep tracker's armed eligibility for this confirmed generation;
+                    # effective fallback after reset must not rewrite it.
+                    pass
+                elif self._renewal_invalidated_at.get("claude") is not None:
+                    invalidated_at = self._renewal_invalidated_at["claude"]
+                    new_observation = (
+                        view.quota_fresh_5h
+                        and view.quota_observed_at_5h is not None
+                        and view.quota_observed_at_5h > invalidated_at
+                    )
+                    if new_observation:
+                        self._renewal_invalidated_at.pop("claude", None)
+                        self._renewal_source.pop("claude", None)
+                        previous = None
+                    else:
+                        self._renewal.forget("claude")
+                        self._renewal_source["claude"] = signature
+                        previous = signature
+                if not confirmed_due and (
+                    not unsafe_identity
+                    and "claude" not in self._renewal_invalidated_at
+                    and previous != signature
+                ):
+                    self._renewal.forget("claude")
+                    self._renewal_armed.discard("claude")
+                    self._renewal_source["claude"] = signature
+                    if view.reset_5h is not None and view.reset_5h > now:
+                        self._renewal.observe({"claude": view})
+                        self._renewal_armed.add("claude")
+                elif (
+                    not confirmed_due
+                    and not unsafe_identity
+                    and "claude" not in self._renewal_invalidated_at
+                    and "claude" in self._renewal_armed
+                ):
+                    self._renewal.observe({"claude": view})
+                elif (
+                    not confirmed_due
+                    and not view.quota_fresh_5h
+                    and "claude" not in self._renewal_invalidated_at
+                    and view.source_5h.startswith("estimado")
+                    and "desatualizado" not in view.source_5h
+                ):
+                    self._renewal.observe({"claude": view})
+        chatgpt = views.get("chatgpt")
+        if chatgpt is not None:
+            self._renewal.observe({"chatgpt": chatgpt})
 
     def _reload(self) -> datetime:
         now = self._clock()
@@ -278,12 +487,13 @@ class HudWindow(QWidget):
         providers = self._renewal.due(now)
         for p in providers:
             self.renewed.emit(p)
+            self._renewal_armed.discard(p)
         return bool(providers)
 
     def refresh(self) -> None:
         """Recarrega o view-model (lê DB), re-renderiza e avisa renovações."""
         now = self._reload()
-        self._renewal.observe(self._views)
+        self._observe_renewals(now)
         if self._emit_due(now):
             self._reload()  # snapshot pos-reset; due ja foi consumido
 
@@ -291,16 +501,22 @@ class HudWindow(QWidget):
         """Re-renderiza countdowns com o relógio atual; dispara renovação vencida."""
         now = self._clock()
         self._render(now)
+        self._observe_renewals(now)
         if self._emit_due(now):
             self._reload()
 
     @Slot(str, dict)
     def on_update(self, kind: str, payload: dict) -> None:
-        if kind in ("usage", "limit"):
+        if kind in ("usage", "limit", "quota"):
             self.refresh()
         elif kind in ("conn", "status"):
             self._conn = apply_conn_update(self._conn, kind, payload)
             self.status_label.setText(conn_label(self._conn))
+            now = self._clock()
+            self._render(now)
+            self._observe_renewals(now)
+            if self._emit_due(now):
+                self._reload()
 
     @property
     def effective_compact(self) -> bool:

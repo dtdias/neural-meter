@@ -88,6 +88,67 @@ def test_build_provider_view_empty():
     assert v.level_5h == "red" and v.rate_limited
 
 
+def test_fresh_quota_never_hides_local_block_and_reset_source():
+    r = NOW + timedelta(hours=1)
+    old_blocked = _snap("claude", 8, r, limited=True)
+    weekly = WeeklyResult(_snap("claude", 12, r, limited=True), {}, 1, 10, "opus")
+    snapshots = {
+        "status": "fresh",
+        "windows": {
+            ("5h", ""): {"percent": 15, "reset_at": None},
+            ("weekly", ""): {"percent": 20, "reset_at": None},
+        },
+    }
+    view = build_provider_view("claude", old_blocked, weekly, snapshots)
+    assert (view.pct_5h, view.level_5h) == (100, "red")
+    assert (view.pct_week, view.level_week) == (100, "red")
+    assert view.reset_source_5h == "estimado (bloqueio local)"
+    assert view.reset_source_week == "estimado (bloqueio local)"
+
+
+def test_snapshot_status_fallback_is_explicit():
+    weekly = WeeklyResult(_snap("claude", 0), {}, 0, 0, None)
+    cases = {
+        "stale": "estimado · desatualizado",
+        "ambiguous": "estimado · contas ambíguas",
+        "unavailable": "estimado · indisponível",
+    }
+    for status, source in cases.items():
+        view = build_provider_view(
+            "claude", _snap("claude", 0), weekly, {"status": status, "windows": {}}
+        )
+        assert view.pct_5h == 0 and view.source_5h == source
+
+
+def test_missing_aggregate_stays_estimated_while_model_windows_remain_distinct():
+    weekly = WeeklyResult(_snap("claude", 0), {}, 0, 0, None)
+    quota = {
+        "status": "fresh",
+        "windows": {
+            ("opus", "opus"): {"percent": 33, "observed_at": NOW.isoformat()},
+            ("sonnet", "sonnet"): {"percent": 44, "observed_at": NOW.isoformat()},
+        },
+    }
+    view = build_provider_view("claude", _snap("claude", 0), weekly, quota)
+    assert view.pct_5h == 0 and view.source_5h == "estimado · campo ausente"
+    assert "opus: 33% oficial" in view.model_quota
+    assert "sonnet: 44% oficial" in view.model_quota
+
+
+def test_official_percent_without_reset_keeps_reset_estimated_and_labeled():
+    local_reset = NOW + timedelta(hours=2)
+    weekly = WeeklyResult(_snap("claude", 0), {}, 0, 0, None)
+    view = build_provider_view(
+        "claude",
+        _snap("claude", 35, local_reset),
+        weekly,
+        {"status": "fresh", "windows": {("5h", ""): {"percent": 40, "reset_at": None}}},
+    )
+    assert view.pct_5h == 40 and view.source_5h == "oficial"
+    assert view.reset_5h == local_reset
+    assert view.reset_source_5h == "não informado pela fonte"
+
+
 def test_load_hud_view(tmp_data_dir):
     conn = connect_db()
     t = NOW - timedelta(minutes=10)
@@ -112,12 +173,16 @@ def test_apply_conn_update_transitions():
     assert conn_label(s) == "offline"
     s = apply_conn_update(s, "conn", {"clients": 1})
     assert s.clients == 1 and conn_label(s) == "aguardando aba"
-    s = apply_conn_update(s, "status", {"tabs": {"claude": True, "chatgpt": False}})
+    s = apply_conn_update(
+        s, "status", {"tabs": {"claude": True, "chatgpt": False, "claude_count": 2}}
+    )
     assert s.tabs == {"claude": True, "chatgpt": False} and conn_label(s) == "online"
+    assert s.claude_tabs == 2
     s = apply_conn_update(s, "conn", {"clients": 2})
     assert s.tabs["claude"] and conn_label(s) == "online"
     s = apply_conn_update(s, "conn", {"clients": 0})
     assert s.tabs == {"claude": False, "chatgpt": False} and conn_label(s) == "offline"
+    assert s.claude_tabs is None
     assert apply_conn_update(s, "usage", {}) == s
     assert apply_conn_update(s, "status", {}) == s
 

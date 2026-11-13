@@ -10,9 +10,21 @@ export function providerMatchesSender(provider, url) {
     const host = PROVIDER_HOSTS[provider];
     if (!host || typeof url !== "string") return false;
     const u = new URL(url);
-    return u.protocol === "https:" && u.hostname === host;
+    return u.protocol === "https:" && u.hostname === host && !u.port && !u.username && !u.password;
   } catch {
     return false;
+  }
+}
+
+export function sanitizeQuotaCandidate(msg, senderUrl) {
+  try {
+    const p = msg && msg.payload;
+    if (msg?.nm !== "quotaCandidate" || !providerMatchesSender("claude", senderUrl)) return null;
+    if (!p || typeof p.orgId !== "string" || !p.orgId || p.orgId.length > 256 ||
+        (p.body !== null && (typeof p.body !== "string" || new TextEncoder().encode(p.body).byteLength > 65536))) return null;
+    return { orgId: p.orgId, body: p.body };
+  } catch {
+    return null;
   }
 }
 
@@ -50,6 +62,15 @@ export function sanitizeBridgeMessage(msg) {
       }
       if (isStr(p.model, 100)) out.model = p.model; // inválido: só descarta o campo
       return out;
+    }
+    if (msg.nm === "quota") {
+      if (p.provider !== "claude" || !/^[0-9a-f]{64}$/.test(p.account_hash || "") || !["5h", "weekly", "opus", "sonnet"].includes(p.window)) return null;
+      if ((["5h", "weekly"].includes(p.window) && p.model !== undefined) || ((p.window === "opus" || p.window === "sonnet") && p.model !== p.window)) return null;
+      if (typeof p.percent !== "number" || !Number.isFinite(p.percent) || p.percent < 0 || p.percent > 100) return null;
+      if (!Number.isSafeInteger(p.observed_at) || p.observed_at <= 0) return null;
+      if (p.reset_at !== null && p.reset_at !== undefined && (!Number.isSafeInteger(p.reset_at) || p.reset_at <= p.observed_at)) return null;
+      if (p.model !== undefined && !["opus", "sonnet"].includes(p.model)) return null;
+      return { type: "quota", provider: "claude", account_hash: p.account_hash, window: p.window, percent: p.percent, observed_at: p.observed_at, ...(p.reset_at ? { reset_at: p.reset_at } : {}), ...(p.model ? { model: p.model } : {}) };
     }
     return null;
   } catch {
