@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NeuralMeter Bridge",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Leitura passiva experimental de uso de Claude, ChatGPT e Gemini para NeuralMeter local.",
   "minimum_chrome_version": "116",
   "icons": {

@@ -124,10 +124,10 @@ flowchart LR
 
 ### Installation (user)
 
-1. Download and run `NeuralMeter-Setup.exe` from the [Release](https://github.com/dtdias/neural-meter/releases/latest). Setup is per-user, in `%LOCALAPPDATA%\Programs\NeuralMeter`, **no admin needed**. Optional tasks: desktop shortcut and start with Windows.
+1. Download `NeuralMeter-Setup.exe` and `NeuralMeter-Bridge-0.2.1.zip` from [Release v0.2.1](https://github.com/dtdias/neural-meter/releases/tag/v0.2.1). Run setup: per-user install in `%LOCALAPPDATA%\Programs\NeuralMeter`, **no admin needed**. Optional tasks: desktop shortcut and start with Windows.
    - The installer is **not signed**: SmartScreen may warn ("Windows protected your PC"). Click **More info** and then **Run anyway**.
 2. Install the **NeuralMeter Bridge** extension (Chrome, Edge, Brave or Opera):
-   1. Download `NeuralMeter-Bridge-<version>.zip` from the Release and unzip it into a permanent folder.
+   1. Unzip `NeuralMeter-Bridge-0.2.1.zip` into a permanent folder.
    2. Open `chrome://extensions` (or `edge://extensions`) and turn on **Developer mode**.
    3. Click **Load unpacked** and select the unzipped folder.
 3. Open NeuralMeter and use claude.ai / chatgpt.com as usual. Gemini Web shows experimental local counts; quota/reset remain unknown.

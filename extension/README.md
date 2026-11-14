@@ -2,7 +2,7 @@
 
 Lê passivamente o uso de claude.ai e chatgpt.com e envia ao app local via `ws://127.0.0.1:8765`. Gemini web está em modo experimental.
 
-Para usuarios finais: use o zip `NeuralMeter-Bridge-<versao>.zip` (gerado por `scripts/build_installer.py`; ver README raiz, secao Instalacao).
+Para usuarios finais: use `NeuralMeter-Bridge-0.2.1.zip` da Release v0.2.1 (ver README raiz, seção Instalação). Pacote contém extensão Gemini experimental; quotas/reset seguem desconhecidos.
 
 ## Carregar sem empacotar
 1. Abra `chrome://extensions` (ou `edge://extensions`), ative **Modo do desenvolvedor**.
