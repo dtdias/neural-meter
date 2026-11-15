@@ -25,6 +25,247 @@ def test_flags(qapp):
     assert f & Qt.WindowType.Tool
 
 
+def test_claude_cli_source_is_separate_and_disconnect_unknown(qapp):
+    hud = HudWindow(view_loader=lambda _now: {"claude": _view(pct=31)})
+    hud.set_quota_visibility({key: key == "claude_cli_5h" for key in hud._quota_visibility})
+    bridge = UpdateBridge()
+    bridge.updated.connect(hud.on_update)
+    before = hud.rows["claude"].bar_5h.value()
+    bridge.updated.emit(
+        "cli",
+        {"status": "available", "five_hour": {"percent": 62, "reset_at": None}},
+    )
+    assert "62%" in hud.cli_status.text()
+    assert hud.rows["claude"].bar_5h.value() == before
+    bridge.updated.emit("cli", {"status": "disconnected"})
+    assert "desconectado" in hud.cli_status.text()
+    assert hud.rows["claude"].bar_5h.value() == before
+
+
+def test_quota_visibility_hides_individual_windows_without_zeroes(qapp):
+    hud = HudWindow(view_loader=lambda _now: {"claude": _view(pct=31)})
+    hud.set_quota_visibility(
+        {
+            "claude_web_5h": False,
+            "claude_web_weekly": True,
+            "chatgpt_web_weekly": False,
+            "chatgpt_web_5h": False,
+            "gemini_web_activity": False,
+            "claude_cli_5h": False,
+            "claude_cli_weekly": False,
+            "codex_cli_primary": False,
+            "codex_cli_secondary": False,
+            "antigravity": False,
+        }
+    )
+    assert hud.rows["claude"].metric_rows["5h"].isHidden()
+    assert not hud.rows["claude"].metric_rows["weekly"].isHidden()
+    assert hud.rows["chatgpt"].isHidden()
+    assert "sem:" in hud.compact_rows["claude"].text.text()
+    assert "5h:" not in hud.compact_rows["claude"].text.text()
+    assert hud.height() < 270
+    hud.set_quota_visibility({key: False for key in hud._quota_visibility})
+    assert hud.cli_status.text() == "Nenhuma quota selecionada"
+    hud.set_compact(True)
+    assert hud.height() < 150
+
+
+def test_codex_quota_source_stays_separate_from_chatgpt(qapp):
+    hud = HudWindow(view_loader=lambda _now: {"chatgpt": _view("chatgpt", pct=18)})
+    hud.set_quota_visibility({key: key == "codex_cli_primary" for key in hud._quota_visibility})
+    before = hud.rows["chatgpt"].bar_5h.value()
+    hud.on_update(
+        "codex",
+        {
+            "status": "available",
+            "windows": [{"scope": "primary", "percent": 38, "reset_at": None}],
+        },
+    )
+    assert "Codex / Work" in hud.codex_status.text()
+    assert "primary 38%" in hud.codex_status.text()
+    assert "secondary" not in hud.codex_status.text()
+    assert hud.rows["chatgpt"].bar_5h.value() == before
+
+
+def test_cli_expired_window_percent_is_not_shown_as_current(qapp):
+    now = datetime(2026, 11, 14, 12, tzinfo=UTC)
+    hud = HudWindow(clock=lambda: now)
+    hud.set_quota_visibility({key: key == "claude_cli_5h" for key in hud._quota_visibility})
+    hud.set_cli_status(
+        {
+            "status": "available",
+            "five_hour": {"percent": 81, "reset_at": now - timedelta(seconds=1)},
+        }
+    )
+    assert "quota desconhecida (reset vencido)" in hud.cli_status.text()
+    assert "81%" not in hud.cli_status.text()
+
+
+def test_codex_snapshot_ttl_clears_old_percent(qapp):
+    now = datetime(2026, 11, 14, 12, tzinfo=UTC)
+    hud = HudWindow(clock=lambda: now)
+    hud.set_quota_visibility({key: key == "codex_cli_primary" for key in hud._quota_visibility})
+    hud.set_codex_status(
+        {
+            "status": "available",
+            "observed_at": now - timedelta(seconds=121),
+            "windows": [{"scope": "primary", "percent": 46, "reset_at": None}],
+        }
+    )
+    hud.tick()
+    assert "46%" not in hud.codex_status.text()
+    assert "desconhecido" in hud.codex_status.text()
+
+
+def test_antigravity_selection_never_renames_gemini_web(qapp):
+    hud = HudWindow(view_loader=lambda _now: {"gemini": _view("gemini", pct=0)})
+    hud.set_quota_visibility({key: key == "antigravity" for key in hud._quota_visibility})
+    assert not hud.antigravity_status.isHidden()
+    assert "não conectado" in hud.antigravity_status.text()
+    assert hud.rows["gemini"].isHidden()
+    assert "Gemini" not in hud.antigravity_status.text()
+
+
+def test_antigravity_dynamic_bucket_selection_filters_without_zeroes(qapp):
+    hud = HudWindow()
+    hud.set_quota_visibility(
+        {**{key: False for key in hud._quota_visibility}, "antigravity_flash_weekly": True}
+    )
+    hud.set_antigravity_status(
+        {
+            "status": "available",
+            "buckets": [
+                {
+                    "bucket_id": "flash",
+                    "model": "Gemini Flash",
+                    "window": "weekly",
+                    "used_percent": 25,
+                    "reset_at": None,
+                },
+                {
+                    "bucket_id": "pro",
+                    "model": "Gemini Pro",
+                    "window": "weekly",
+                    "used_percent": None,
+                    "reset_at": None,
+                },
+            ],
+        }
+    )
+    assert "Gemini Flash" in hud.antigravity_status.text()
+    assert "25%" in hud.antigravity_status.text()
+    assert "identidade de conta não exposta" in hud.antigravity_status.text()
+    assert "Gemini Pro" not in hud.antigravity_status.text()
+    assert "Gemini" not in hud.rows["gemini"].name_label.text()
+
+
+def test_cli_reset_expiry_invalidates_only_affected_bucket_on_tick(qapp):
+    now = datetime(2026, 11, 14, 12, tzinfo=UTC)
+    hud = HudWindow(clock=lambda: now)
+    hud.set_quota_visibility(
+        {
+            **{key: False for key in hud._quota_visibility},
+            "codex_cli_primary": True,
+            "codex_cli_secondary": True,
+        }
+    )
+    hud.set_codex_status(
+        {
+            "status": "available",
+            "observed_at": now,
+            "windows": [
+                {"limit_id": "codex", "scope": "primary", "percent": 51, "reset_at": now},
+                {
+                    "limit_id": "codex",
+                    "scope": "secondary",
+                    "percent": 75,
+                    "reset_at": now + timedelta(hours=1),
+                },
+            ],
+        }
+    )
+    hud.tick()
+    assert "51%" not in hud.codex_status.text()
+    assert "75%" in hud.codex_status.text()
+
+
+def test_antigravity_reset_expiry_drops_only_expired_bucket_percent(qapp):
+    now = datetime(2026, 11, 14, 12, tzinfo=UTC)
+    hud = HudWindow(clock=lambda: now)
+    hud.set_quota_visibility({"antigravity": True})
+    hud.set_antigravity_status(
+        {
+            "status": "available",
+            "observed_at": now,
+            "buckets": [
+                {"bucket_id": "flash", "window": "5h", "used_percent": 20, "reset_at": now},
+                {
+                    "bucket_id": "pro",
+                    "window": "weekly",
+                    "used_percent": 70,
+                    "reset_at": now + timedelta(hours=1),
+                },
+            ],
+        }
+    )
+    hud.tick()
+    assert "20%" not in hud.antigravity_status.text()
+    assert "70%" in hud.antigravity_status.text()
+
+
+def test_cached_codex_snapshot_reapplies_new_visibility_without_refreshing_age(qapp):
+    now = datetime(2026, 11, 14, 12, tzinfo=UTC)
+    hud = HudWindow(clock=lambda: now)
+    observed = now - timedelta(seconds=25)
+    payload = {
+        "status": "available",
+        "observed_at": observed,
+        "windows": [
+            {"limit_id": "codex", "scope": "primary", "percent": 15, "window_minutes": 300},
+            {"limit_id": "codex", "scope": "secondary", "percent": 63, "window_minutes": 10080},
+        ],
+    }
+    hud.set_codex_status(payload)
+    hud.set_quota_visibility(
+        {
+            **{key: False for key in hud._quota_visibility},
+            "codex_cli_secondary": True,
+        }
+    )
+    assert "15" not in hud.codex_status.text()
+    assert "63" in hud.codex_status.text()
+    assert "10080m" in hud.codex_compact.text()
+    assert hud._codex_observed_at == observed
+    hud.set_quota_visibility({key: False for key in hud._quota_visibility})
+    assert "63" not in hud.codex_status.text()
+
+
+def test_cached_codex_weekly_only_filter_survives_settings_reload(qapp, tmp_path):
+    from neuralmeter.ui.settings import load_settings, parse_quota_visibility, save_settings
+
+    path = tmp_path / "settings.json"
+    saved = {
+        **HudWindow()._quota_visibility,
+        "codex_cli_primary": False,
+        "codex_cli_secondary": True,
+    }
+    save_settings({"quota_visibility": saved}, path)
+    loaded = parse_quota_visibility(load_settings(path)["quota_visibility"])
+    hud = HudWindow()
+    hud.set_codex_status(
+        {
+            "status": "available",
+            "windows": [
+                {"scope": "primary", "percent": 31, "window_minutes": 300},
+                {"scope": "secondary", "percent": 77, "window_minutes": 10080},
+            ],
+        }
+    )
+    hud.set_quota_visibility(loaded)
+    assert "31" not in hud.codex_status.text()
+    assert "77" in hud.codex_status.text()
+
+
 def _view(provider="claude", pct=75.0, reset=None, model="sonnet"):
     return ProviderView(
         provider=provider,
@@ -269,8 +510,8 @@ def test_compact_row_labels(qapp):
     limited = replace(_view("chatgpt", pct=95), rate_limited=True)
     views = {"claude": _view(pct=75), "chatgpt": limited}
     hud = HudWindow(view_loader=lambda n: views, clock=lambda: now)
-    assert "Estimado" in hud.compact_rows["claude"].text.text()
-    assert "75% usado" in hud.compact_rows["claude"].text.text()
+    assert "75%" in hud.compact_rows["claude"].text.text()
+    assert "sem: 10%" in hud.compact_rows["claude"].text.text()
     assert hud.compact_rows["claude"].bar.value() == 75
     assert hud.compact_rows["chatgpt"].text.text().startswith("Bloqueado")
 

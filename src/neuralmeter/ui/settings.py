@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import secrets
 import string
 from datetime import timedelta
@@ -12,6 +13,43 @@ from neuralmeter.engine import DEFAULT_WEIGHT_PARAMS, ModelLimit, WeightParams
 from neuralmeter.privacy import PrivacySettings, clamp_retention_days
 
 DEFAULTS: dict = {"hud_pos": None, "opacity": 100, "compact": False, "click_through": False}
+
+QUOTA_VISIBILITY_DEFAULTS = {
+    "claude_web_5h": True,
+    "claude_web_weekly": True,
+    "claude_cli_5h": False,
+    "claude_cli_weekly": False,
+    "chatgpt_web_5h": True,
+    "chatgpt_web_weekly": True,
+    "codex_cli_primary": False,
+    "codex_cli_secondary": False,
+    "gemini_web_activity": True,
+    "antigravity": False,
+}
+MAX_QUOTA_OVERRIDES = 256
+MAX_SETTINGS_BYTES = 64 * 1024
+QUOTA_DYNAMIC_KEY_PATTERN = re.compile(r"(?:codex_cli|antigravity)_[a-z0-9_-]{1,128}")
+
+
+def parse_quota_visibility(raw) -> dict[str, bool]:
+    """Whitelist stable quota display IDs; invalid/missing values use safe defaults."""
+    raw = raw if isinstance(raw, dict) else {}
+    values = {
+        key: raw[key] if isinstance(raw.get(key), bool) else default
+        for key, default in QUOTA_VISIBILITY_DEFAULTS.items()
+    }
+    dynamic_count = 0
+    for key, value in raw.items():
+        if (
+            key not in values
+            and isinstance(key, str)
+            and QUOTA_DYNAMIC_KEY_PATTERN.fullmatch(key)
+            and isinstance(value, bool)
+        ):
+            if dynamic_count < MAX_QUOTA_OVERRIDES:
+                values[key] = value
+                dynamic_count += 1
+    return values
 
 
 OPACITY_PRESETS = (20, 40, 60, 80, 100)
@@ -100,7 +138,11 @@ def load_settings(path: Path | None = None) -> dict:
     path = path or settings_path()
     data = dict(DEFAULTS)
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        with path.open("rb") as stream:
+            payload = stream.read(MAX_SETTINGS_BYTES + 1)
+        if len(payload) > MAX_SETTINGS_BYTES:
+            return data
+        raw = json.loads(payload.decode("utf-8"))
     except (OSError, ValueError):
         return data
     if isinstance(raw, dict):

@@ -1,8 +1,46 @@
-from neuralmeter.ui.settings import DEFAULTS, load_settings, save_settings
+from neuralmeter.ui.settings import (
+    DEFAULTS,
+    load_settings,
+    parse_quota_visibility,
+    save_settings,
+)
 
 
 def test_missing_gives_defaults(tmp_path):
     assert load_settings(tmp_path / "s.json") == DEFAULTS
+
+
+def test_quota_visibility_whitelist_defaults_and_boolean_validation():
+    visible = parse_quota_visibility(
+        {
+            "claude_web_5h": False,
+            "codex_cli_primary": True,
+            "gemini_web_activity": 1,
+            "secret": True,
+        }
+    )
+    assert visible["claude_web_5h"] is False
+    assert visible["codex_cli_primary"] is True
+    assert visible["gemini_web_activity"] is True
+    assert "secret" not in visible
+    assert visible["claude_cli_5h"] is False
+
+
+def test_quota_visibility_keeps_static_defaults_and_caps_dynamic_overrides_separately():
+    raw = {f"antigravity_bucket{i}_weekly": i % 2 == 0 for i in range(300)}
+    parsed = parse_quota_visibility(raw)
+    dynamic = [key for key in parsed if key.startswith("antigravity_")]
+    assert len(dynamic) == 256
+    assert parsed["claude_web_5h"] is True
+    assert parsed["codex_cli_primary"] is False
+
+
+def test_dynamic_quota_visibility_roundtrip_and_disappeared_bucket(tmp_path):
+    p = tmp_path / "settings.json"
+    key = "antigravity_model_flash_weekly"
+    save_settings({"quota_visibility": {key: True}}, p)
+    loaded = load_settings(p)
+    assert parse_quota_visibility(loaded["quota_visibility"])[key] is True
 
 
 def test_roundtrip_and_no_tmp(tmp_path):
@@ -19,6 +57,12 @@ def test_corrupt_gives_defaults(tmp_path):
     p.write_text("{nope", encoding="utf-8")
     assert load_settings(p) == DEFAULTS
     p.write_text("[1,2]", encoding="utf-8")
+    assert load_settings(p) == DEFAULTS
+
+
+def test_settings_file_read_is_bounded_to_64kib(tmp_path):
+    p = tmp_path / "large-settings.json"
+    p.write_bytes(b" " * (64 * 1024 + 1))
     assert load_settings(p) == DEFAULTS
 
 

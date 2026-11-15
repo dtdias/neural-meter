@@ -40,6 +40,24 @@ Como as plataformas web utilizam proteções rigorosas (Cloudflare Turnstile, TL
 [ Popup Flutuante (Always-on-Top) + System Tray ]
 ```
 
+### 2.1.1. Fonte opcional Claude Code CLI
+
+Como adição opt-in, o app desktop verifica `claude auth status --json` em modo read-only, lê somente credencial OAuth local oficial do Claude Code e consulta `https://api.anthropic.com/api/oauth/usage` por GET HTTPS. Não iniciar inferência, login, refresh, nem acessar `claude.ai`/`chatgpt.com` fora do navegador. Tokens permanecem em memória durante a requisição e nunca são persistidos/logados. Snapshots CLI são somente em memória e ficam separados de Claude Web; ausência de dado válido significa quota desconhecida. Codex CLI está especificado em 2.1.2; Gemini CLI não é tratado como quota Gemini Web.
+
+### 2.1.2. Fonte opcional Codex CLI e seleção de exibição
+
+Codex CLI opcional usa app-server oficial em stdio JSONL (wire sem campo `jsonrpc`): `initialize` e aguarda resposta, notificação `initialized`, `account/read` com `{refreshToken:false}`, depois `account/rateLimits/read`. Métodos allowlist exata; sandbox `read-only`; auth nula/API key não gera falsa quota. Preferir `rateLimitsByLimitId`, fallback `rateLimits`; usar `limitId`/`limitName`, scopes `primary`/`secondary`, duração retornada e `resetsAt` epoch seconds. Não fixar janelas; dados sem reset/duração ficam desconhecidos. Sem geração/login/refresh, sem leitura de auth.json, sem associação a ChatGPT Web. Fonte `Codex / Work`.
+
+Usuário seleciona quotas por fonte/janela/bucket. Preferências de exibição não habilitam coleta; consentimento de cada conector continua separado e opt-in. Gemini Web permanece atividade estimada sem quota oficial.
+
+### 2.1.3. Antigravity IDE (experimental)
+
+Fonte separada de Gemini Web e Gemini CLI. Conector IDE opt-in localiza somente processo/listener descendente de instalação Antigravity validada, examina argumentos apenas desses processos em memória e faz RPC allowlisted `GetUserStatus`/`RetrieveUserQuotaSummary` a listener loopback; nunca varre portas, lê transcripts/prompts, modifica `~/.gemini/antigravity-cli/settings.json`, usa cookies/OAuth externo ou loga CSRF/raw responses. Poller revalida PID/creation-time/porta/CSRF local keyed-HMAC antes/depois das chamadas e watcher local a cada 2,5 s; sem tráfego externo. `remainingFraction` converte para percentual usado; `remainingAmount` sem teto correspondente permanece desconhecido; reset inválido/desatualizado não vira tempo inventado. Buckets/IDs reportados são dinâmicos e individualmente selecionáveis, com limite explícito de 256 e indicador de cobertura parcial.
+
+Documentação oficial CLI descreve campo JSON `quota` para script `statusLine`, mas JSON inclui campos sensíveis (email, transcript path e contexto) e configurar hook exige ação explícita do usuário. `/usage`/`/quota` abre painel TUI, não endpoint JSON standalone. Não configurar automaticamente. Identidade de conta só considerada conhecida se resposta expõe ID estável não-email; ID passa keyed-HMAC efêmero em memória, nunca UI/settings/log/DB. Sem ID estável, UI declara identidade não exposta; troca interna sem sinal observável pode permanecer desconhecida até próximo poll (60 s) e TTL HUD (120 s). Não afirmar detecção instantânea.
+
+Referências: [Codex app-server oficial](https://developers.openai.com/codex/app-server.md); [Antigravity statusLine oficial](https://antigravity.google/docs/cli/statusline/); [Antigravity usage CLI oficial](https://antigravity.google/docs/cli/commands/usage/); detector/protocolo comunitário [n2ns/antigravity-panel `detection_utils.ts`](https://github.com/n2ns/antigravity-panel/blob/8e7513e6236f0ce1361db857a80f83ee962a284a/src/shared/platform/detection_utils.ts) e [quota service](https://github.com/n2ns/antigravity-panel/blob/8e7513e6236f0ce1361db857a80f83ee962a284a/src/model/services/quota.service.ts), Apache-2.0. Token Meter fixado em `f8a767a5a187b7c4439111abe4cfb6a3d59019f6`/MIT não implementa quota Antigravity; nenhum código copiado. Protocolo comunitário não é contrato Google. Sem execução de agente/inferência.
+
 ### 2.1. Módulo Collector (Browser Bridge)
 * **Extensão Leve (Manifest V3):** Roda silenciosamente no navegador padrão do usuário (Chrome, Edge, Brave, Opera) onde a sessão já está autenticada.
 * **Interceptação Passiva:** Escuta os eventos de envio e resposta nas abas `claude.ai` e `chatgpt.com` sem modificar o comportamento da página e sem injetar prompts.
