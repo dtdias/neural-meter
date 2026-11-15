@@ -96,6 +96,10 @@ A extensão (`extension/src`) injeta `page_hook.js` no contexto da página, repa
 ## Cotas e cálculo
 
 - **Claude**: a janela de 5h começa na primeira mensagem e termina no reset oficial quando o servidor o informa. Cada mensagem pesa conforme o contexto acumulado da conversa, já que o histórico é reenviado a cada turno.
+- **Claude Code CLI (opt-in)**: item "Conectar Claude CLI" consulta somente quota OAuth oficial em `api.anthropic.com`; HUD mantém fonte separada. **Codex CLI / Work (opt-in)** usa app-server oficial: `initialize` → `initialized` → `account/read` sem refresh → `account/rateLimits/read`; exibe buckets/limites reportados, nunca ChatGPT Web.
+- **Antigravity (experimental, opt-in)**: consulta endpoints loopback da instância IDE identificada, sem acessar prompts, transcripts, cookies ou OAuth externo. Protocolo local é não oficial/comunitário. Fontes/limites sem resposta aparecem desconhecidos, nunca `0%` inventado. CLI oficial Antigravity documenta `statusLine` com JSON `quota`, mas exige configuração explícita do usuário; NeuralMeter não altera settings.
+- Mudança local de credencial/processo invalida snapshot via keyed-HMAC efêmero em memória; watcher local limitado a 2,5 s, sem polling de rede adicional. Se serviço não expõe ID estável, UI declara identidade desconhecida; troca interna sem sinal detectável pode esperar próximo poll.
+- **Exibição por quota**: bandeja → **Quotas exibidas…** seleciona fontes/janelas/buckets individualmente depois que IDs aparecem. Seleção visual não conecta CLI; conexão exige opt-in separado. Gemini Web continua atividade experimental, sem quota oficial, distinta de Antigravity.
 - **ChatGPT**: cada mensagem expira individualmente, por modelo, com janela padrão de 3h (5h configurável).
 - **Semanal**: uso acumulado em uma janela de 7 dias.
 - **Tetos padrão**: 45 unidades na janela de 5h e 500 na semanal; ambos editáveis pela bandeja.
@@ -131,6 +135,7 @@ flowchart LR
    2. Abra `chrome://extensions` (ou `edge://extensions`) e ative o **Modo do desenvolvedor**.
    3. Clique em **Carregar sem compactação** e selecione a pasta descompactada.
 3. Abra NeuralMeter e use claude.ai / chatgpt.com normalmente. Gemini Web mostra contagens locais experimentais; quotas/reset permanecem desconhecidos.
+4. Configure **Quotas exibidas…** na bandeja. Para coleta, habilite cada item independente: **Conectar Claude CLI**, **Conectar Codex CLI**, **Conectar Antigravity (experimental)**. Desabilite para desconectar.
 
 Para desinstalar: Configurações do Windows, Aplicativos, NeuralMeter. Os dados em `%LOCALAPPDATA%\NeuralMeter` são mantidos; apague a pasta para remover tudo.
 

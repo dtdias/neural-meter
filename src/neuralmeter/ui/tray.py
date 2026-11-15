@@ -7,13 +7,14 @@ from collections.abc import Callable
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QActionGroup, QColor, QFont, QIcon, QPainter, QPixmap
-from PySide6.QtWidgets import QMenu, QMessageBox, QSystemTrayIcon
+from PySide6.QtWidgets import QDialog, QMenu, QMessageBox, QSystemTrayIcon
 
 from neuralmeter.autostart import is_autostart_enabled, set_autostart
 from neuralmeter.db import clear_usage_events
 from neuralmeter.ui.hud import HudWindow
 from neuralmeter.ui.icons import load_app_icon
 from neuralmeter.ui.limits_dialog import open_limits_dialog
+from neuralmeter.ui.quota_visibility_dialog import QuotaVisibilityDialog
 from neuralmeter.ui.renewal import renewal_message
 from neuralmeter.ui.settings import OPACITY_PRESETS
 
@@ -55,9 +56,22 @@ class TrayController(QSystemTrayIcon):
         on_notify_changed: Callable[[bool], None] | None = None,
         privacy_hash: bool = True,
         on_privacy_changed: Callable[[bool], None] | None = None,
+        cli_enabled: bool = False,
+        on_cli_changed: Callable[[bool], None] | None = None,
+        codex_enabled: bool = False,
+        on_codex_changed: Callable[[bool], None] | None = None,
+        antigravity_enabled: bool = False,
+        on_antigravity_changed: Callable[[bool], None] | None = None,
+        quota_visibility: dict | None = None,
+        on_quota_visibility_changed: Callable[[dict], None] | None = None,
     ) -> None:
         super().__init__(make_tray_icon())
         self.on_privacy_changed = on_privacy_changed
+        self.on_cli_changed = on_cli_changed
+        self.on_codex_changed = on_codex_changed
+        self.on_antigravity_changed = on_antigravity_changed
+        self.quota_visibility = dict(quota_visibility or {})
+        self.on_quota_visibility_changed = on_quota_visibility_changed
         self.hud = hud
         self.conn = conn
         self.on_limits_saved = on_limits_saved
@@ -110,6 +124,31 @@ class TrayController(QSystemTrayIcon):
         self.act_autostart.toggled.connect(self._on_autostart_toggled)
 
         self.menu.addSeparator()
+        self.act_cli = self.menu.addAction("Conectar Claude CLI")
+        self.act_cli.setCheckable(True)
+        self.act_cli.setChecked(bool(cli_enabled))
+        self.act_cli.setText("Desconectar Claude CLI" if cli_enabled else "Conectar Claude CLI")
+        self.act_cli.toggled.connect(self._on_cli_toggled)
+        self.act_codex = self.menu.addAction("Conectar Codex CLI")
+        self.act_codex.setCheckable(True)
+        self.act_codex.setChecked(bool(codex_enabled))
+        self.act_codex.setText("Desconectar Codex CLI" if codex_enabled else "Conectar Codex CLI")
+        self.act_codex.toggled.connect(self._on_codex_toggled)
+        self.act_antigravity = self.menu.addAction("Conectar Antigravity (experimental)")
+        self.act_antigravity.setCheckable(True)
+        self.act_antigravity.setChecked(bool(antigravity_enabled))
+        self.act_antigravity.setText(
+            "Desconectar Antigravity (experimental)"
+            if antigravity_enabled
+            else "Conectar Antigravity (experimental)"
+        )
+        self.act_antigravity.toggled.connect(self._on_antigravity_toggled)
+
+        self.menu.addSeparator()
+        self.act_quota_visibility = self.menu.addAction("Quotas exibidas…")
+        self.act_quota_visibility.triggered.connect(self._configure_quota_visibility)
+
+        self.menu.addSeparator()
         self.act_private = self.menu.addAction("Modo privado (hash IDs)")
         self.act_private.setCheckable(True)
         self.act_private.setChecked(bool(privacy_hash))
@@ -136,6 +175,51 @@ class TrayController(QSystemTrayIcon):
     def _on_private_toggled(self, value: bool) -> None:
         if self.on_privacy_changed is not None:
             self.on_privacy_changed(bool(value))
+
+    def _on_cli_toggled(self, value: bool) -> None:
+        self.act_cli.setText("Desconectar Claude CLI" if value else "Conectar Claude CLI")
+        if self.on_cli_changed is not None:
+            self.on_cli_changed(bool(value))
+
+    def _on_codex_toggled(self, value: bool) -> None:
+        self.act_codex.setText("Desconectar Codex CLI" if value else "Conectar Codex CLI")
+        if self.on_codex_changed is not None:
+            self.on_codex_changed(bool(value))
+
+    def _on_antigravity_toggled(self, value: bool) -> None:
+        self.act_antigravity.setText(
+            "Desconectar Antigravity (experimental)"
+            if value
+            else "Conectar Antigravity (experimental)"
+        )
+        if self.on_antigravity_changed is not None:
+            self.on_antigravity_changed(bool(value))
+
+    def _configure_quota_visibility(self) -> None:
+        available: dict[str, str] = {}
+        for window in getattr(self.hud, "_codex_payload", {}).get("windows", []):
+            if not isinstance(window, dict):
+                continue
+            limit_id = str(window.get("limit_id", "codex"))[:48].lower()
+            scope = str(window.get("scope", ""))[:16]
+            key = f"codex_cli_{scope}" if limit_id == "codex" else f"codex_cli_{limit_id}_{scope}"
+            available[key] = (
+                f"Codex / Work · {str(window.get('limit_name') or limit_id)[:40]} · {scope}"
+            )
+        for bucket in getattr(self.hud, "_antigravity_payload", {}).get("buckets", []):
+            if not isinstance(bucket, dict):
+                continue
+            bucket_id = str(bucket.get("bucket_id", ""))[:48].lower()
+            window = str(bucket.get("window", "unknown"))[:24].lower()
+            key = f"antigravity_{bucket_id}_{window}"
+            available[key] = (
+                f"Antigravity · {str(bucket.get('model') or bucket_id)[:40]} · {window}"
+            )
+        dialog = QuotaVisibilityDialog(self.quota_visibility, available)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.quota_visibility = dialog.selection()
+            if self.on_quota_visibility_changed is not None:
+                self.on_quota_visibility_changed(self.quota_visibility)
 
     def _clear_history(self) -> int:
         """Confirma e apaga usage_events; retorna removidos (0 se cancelado/sem conexão)."""
@@ -198,6 +282,14 @@ def build_tray(
     on_notify_changed: Callable[[bool], None] | None = None,
     privacy_hash: bool = True,
     on_privacy_changed: Callable[[bool], None] | None = None,
+    cli_enabled: bool = False,
+    on_cli_changed: Callable[[bool], None] | None = None,
+    codex_enabled: bool = False,
+    on_codex_changed: Callable[[bool], None] | None = None,
+    antigravity_enabled: bool = False,
+    on_antigravity_changed: Callable[[bool], None] | None = None,
+    quota_visibility: dict | None = None,
+    on_quota_visibility_changed: Callable[[dict], None] | None = None,
 ) -> TrayController:
     return TrayController(
         hud,
@@ -208,4 +300,12 @@ def build_tray(
         on_notify_changed,
         privacy_hash,
         on_privacy_changed,
+        cli_enabled,
+        on_cli_changed,
+        codex_enabled,
+        on_codex_changed,
+        antigravity_enabled,
+        on_antigravity_changed,
+        quota_visibility,
+        on_quota_visibility_changed,
     )
