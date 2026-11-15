@@ -44,7 +44,7 @@ a = Analysis(
         (os.path.join(ASSETS, "icon.png"), "neuralmeter/assets"),
         (ICO, "neuralmeter/assets"),
     ],
-    hiddenimports=collect_submodules("websockets") + collect_submodules("neuralmeter"),
+    hiddenimports=collect_submodules("neuralmeter"),
     hookspath=[],
     runtime_hooks=[],
     excludes=EXCLUDES,

@@ -33,6 +33,18 @@ class CollectorLifecycle:
             poller = self._active.get(source)
             return int(poller is not None and poller.is_alive())
 
+    def refresh(self, source: str) -> bool:
+        """Request one immediate refresh from active owned worker; never starts a second."""
+        with self._lock:
+            if not self._enabled.get(source, False):
+                return False
+            poller = self._active.get(source)
+            request = getattr(poller, "request_refresh", None)
+            if poller is None or request is None or not poller.is_alive():
+                return False
+            request()
+            return True
+
     def owned_count(self, source: str | None = None) -> int:
         with self._lock:
             return sum(source is None or owner == source for owner in self._owned.values())

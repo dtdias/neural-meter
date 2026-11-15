@@ -1,11 +1,10 @@
-"""Gera dist/NeuralMeter-Setup-<v>.exe (Inno Setup) e dist/NeuralMeter-Bridge-<v>.zip."""
+"""Gera somente instalador NeuralMeter CLI-only via Inno Setup."""
 
 import argparse
 import os
 import shutil
 import subprocess
 import sys
-import zipfile
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
@@ -17,9 +16,7 @@ from neuralmeter import __version__  # noqa: E402
 ISS = ROOT / "packaging" / "neuralmeter.iss"
 DIST = ROOT / "dist"
 EXE = DIST / "NeuralMeter.exe"
-EXT_DIR = ROOT / "extension"
 WINGET_HINT = "winget install --id JRSoftware.InnoSetup -e --scope user"
-ZIP_DATE = (1980, 1, 1, 0, 0, 0)
 
 
 def find_iscc(
@@ -46,23 +43,6 @@ def find_iscc(
     return None
 
 
-def build_extension_zip(ext_dir: Path, out_path: Path) -> Path:
-    ext_dir = Path(ext_dir)
-    files = [ext_dir / "manifest.json"]
-    for sub in ("src", "icons"):
-        files += [p for p in (ext_dir / sub).rglob("*") if p.is_file()]
-    entries = sorted((f.relative_to(ext_dir).as_posix(), f) for f in files)
-    out_path = Path(out_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for name, f in entries:
-            info = zipfile.ZipInfo(name, ZIP_DATE)
-            info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = 0o644 << 16
-            zf.writestr(info, f.read_bytes())
-    return out_path
-
-
 def iscc_command(iscc: Path, iss: Path, version: str) -> list[str]:
     return [str(iscc), "/Qp", f"/DAppVersion={version}", str(iss)]
 
@@ -73,9 +53,6 @@ def build_installer(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     DIST.mkdir(exist_ok=True)
-    zip_path = build_extension_zip(EXT_DIR, DIST / f"NeuralMeter-Bridge-{__version__}.zip")
-    print(f"zip: {zip_path} ({zip_path.stat().st_size / 1024:.1f} KB)")
-
     if not EXE.is_file():
         if args.skip_exe:
             print(f"erro: {EXE} ausente (rode scripts/build_exe.py)")

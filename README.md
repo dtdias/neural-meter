@@ -1,199 +1,56 @@
-<p align="center">
-  <strong>Português</strong> &nbsp;|&nbsp; <a href="./README.en.md">English</a>
-</p>
+# NeuralMeter
 
-<p align="center">
-  <img src="docs/assets/readme-hero-pt.svg" alt="NeuralMeter: monitor local de limites de 5h e semanais do Claude e do ChatGPT" width="100%" />
-</p>
+HUD local para acompanhar quotas de **Claude Code**, **Codex CLI** e **Antigravity IDE** no Windows. NeuralMeter não conecta sites, não monitora navegador e não envia prompts ou inicia inferência.
 
-<p align="center">
-  <strong>Veja seus limites antes de bater neles.</strong><br />
-  Monitor local de limites de 5h e semanais do Claude e do ChatGPT, sem gastar nenhum token.
-</p>
+## Conexões
 
-<p align="center">
-  <img src="https://img.shields.io/badge/plataforma-Windows-0078D6?logo=windows&logoColor=white" alt="Windows" />
-  <img src="https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white" alt="Python 3.13" />
-  <img src="https://img.shields.io/badge/PySide6-HUD-41cd52?logo=qt&logoColor=white" alt="PySide6" />
-  <img src="https://img.shields.io/badge/Manifest-V3-4285F4?logo=googlechrome&logoColor=white" alt="Manifest V3" />
-  <img src="https://img.shields.io/badge/Zero-token-111827" alt="Zero token" />
-  <img src="https://img.shields.io/badge/Idioma-pt--BR-164e63" alt="Português brasileiro" />
-  <img src="https://img.shields.io/badge/licen%C3%A7a-MIT-green" alt="Licença MIT" />
-</p>
+1. Abra NeuralMeter; HUD mostra três fontes separadas.
+2. Clique **Gerenciar conexões** → **Procurar CLIs novamente**.
+3. Revise os estados separados de instalação, autenticação, consentimento e quota. Clique **Conectar** ou **Conectar fontes detectadas**; coleta é opt-in e pode parar com **Desconectar**. **Atualizar quotas autorizadas** antecipa próxima consulta somente das fontes autorizadas.
+4. Use **Quotas exibidas…** para escolher janelas/buckets. Seleção visual não ativa coleta.
 
-<p align="center">
-  <a href="https://github.com/dtdias/neural-meter/releases/latest"><img src="https://img.shields.io/badge/Baixar%20instalador-Windows-2ea44f?style=for-the-badge&logo=windows" alt="Baixar instalador" /></a>
-</p>
+Discovery verifica instalações locais em background. Consultas usam somente métodos read-only documentados/allowlisted: Claude Code OAuth de sessão já existente, Codex app-server gerido pelo CLI e serviço loopback identificado do Antigravity IDE. Sem login, refresh, setup de statusLine, varredura de portas, inferência ou alteração de processos de terceiros. Antigravity é experimental; quota indisponível ou desconhecida não vira `0%`. Gemini CLI e ChatGPT Web não são fontes suportadas.
 
-<p align="center">
-  <a href="https://github.com/dtdias/neural-meter/releases/latest/download/NeuralMeter-Setup.exe">Baixar instalador</a>
-  &nbsp;·&nbsp;
-  <a href="#início-rápido">Início rápido</a>
-  &nbsp;·&nbsp;
-  <a href="#arquitetura">Arquitetura</a>
-  &nbsp;·&nbsp;
-  <a href="#cotas-e-cálculo">Cotas e cálculo</a>
-</p>
+Estados de instalação, consentimento e disponibilidade de quotas são distintos. A UI não declara quota confirmada só por detectar executável. Claude pode exigir assinatura OAuth compatível; auth de API key/terceiro pode não expor quotas. Codex e Antigravity também podem informar sessão/serviço ausente ou shape incompatível. Snapshots de quota ficam em memória; credenciais, identidade bruta e percentuais não são persistidos.
 
-> O NeuralMeter não exige login, conta nem nuvem. Os dados ficam 100% locais, o app escuta apenas em loopback (`127.0.0.1:8765`) e o texto dos seus prompts nunca é gravado.
+## Privacidade e dados
 
-## Por que existe
+- Sem conexão com sites de IA, extensão, WebSocket local ou captura de prompts.
+- Consultas de quota somente após consentimento explícito persistente por fonte.
+- Credenciais não são copiadas para settings, logs, HUD ou SQLite.
+- Dados históricos SQLite e settings existentes são preservados durante migração para CLI-only; nenhum dado é removido na inicialização.
+- App consulta serviços estritamente locais/allowlisted ou endpoint oficial de quota Claude; nenhuma chamada dispara inferência.
 
-Planos de Claude e ChatGPT têm janelas de 5 horas e limites semanais que só ficam visíveis quando o bloqueio já aconteceu. O NeuralMeter mantém um HUD sempre visível no Windows mostrando quanto da janela já foi consumido, para você planejar o trabalho antes de ser interrompido.
+## Instalação
 
-Os números são **estimativas**, não uma garantia dos limites oficiais. Os provedores não publicam as regras exatas; o app calcula a partir do que a extensão observa passivamente e se recalibra quando o servidor informa o reset real ou quando um bloqueio acontece.
+Esta revisão CLI-only ainda não tem release/instalador publicado. Rode a partir do código-fonte ou use release anterior sabendo que ela ainda contém o fluxo Web legado; não substitua artefatos publicados. Instalador/executável futuros podem não ter assinatura digital; Windows pode exibir aviso de segurança.
 
-Snapshot Claude oficial é experimental: rota/esquema sem captura validada. Escopo conta usa HMAC local; HUD exige uma aba confirmada e identidade sem ambiguidade. Múltiplas abas/identidades ou extensão offline causam fallback estimado. Troca sem resposta de cota não é detectável. ChatGPT segue estimativa; sem inferir cota web via Codex.
+Desinstalação: Configurações do Windows → Aplicativos → NeuralMeter. Dados em `%LOCALAPPDATA%\NeuralMeter` permanecem; remova manualmente apenas se desejar apagar dados locais.
 
-Gemini Web também está integrado experimentalmente: HUD mostra somente envios observados e tokens aproximados. Quota, percentual e reset Gemini permanecem desconhecidos; integração baseada em formato interno público não é contrato Google e requer validação em navegador.
+## Desenvolvimento
 
-## O que entrega
-
-| Capturar | Calcular | Mostrar |
-| --- | --- | --- |
-| Extensão passiva (Manifest V3) captura Claude, ChatGPT e Gemini experimental, sem enviar prompts. | Janelas estimadas/oficiais existentes; Gemini exibe contagens sem quota inventada. | HUD always-on-top, ícone na bandeja e toast do Windows ao renovar a cota de 5h. |
-
-### Fluxo
-
-```mermaid
-flowchart LR
-  A["Aba Claude / ChatGPT / Gemini experimental"] --> B["Extensão lê passivamente"]
-  B --> C["WebSocket local 127.0.0.1:8765"]
-  C --> D[("SQLite")]
-  D --> E["Motor de janelas 5h / 7d"]
-  E --> F["HUD e bandeja"]
-  F --> G["Toast ao renovar 5h"]
-```
-
-### Capacidades incluídas
-
-- HUD sem moldura, sempre no topo, com encaixe (snap) nas bordas da tela.
-- Modo expandido por provedor (janela 5h e uso semanal) e modo compacto (pílula com barra 5h e `restam N%`).
-- Cores por uso: verde abaixo de 70%, amarelo de 70 a 89%, vermelho a partir de 90% ou bloqueado.
-- Opacidade de 20 a 100% e click-through.
-- Bandeja do sistema com mostrar/ocultar, limites manuais e iniciar com o Windows.
-- Toast do Windows ao renovar a cota de 5h.
-- Modo privado com hash dos IDs de conversa e retenção configurável; apagar histórico pela bandeja.
-- Auto-calibração: ao detectar bloqueio real, crava 100%, guarda o horário de reset e ajusta o teto.
-- ChatGPT contabilizado por modelo; Claude ponderado pelo contexto acumulado da conversa.
-- Janelas 5h/7d persistidas em SQLite: reiniciar o app não zera.
-
-## Arquitetura
-
-```mermaid
-flowchart TD
-  P["page_hook.js (mundo MAIN)"] --> B["bridge.js"]
-  B --> S["service worker background.js"]
-  S --> W["WebSocket 127.0.0.1:8765"]
-  W --> H["server: handler"]
-  H --> D[("SQLite")]
-  D --> E["engine: janelas e calibração"]
-  E --> U["ui: HUD PySide6 e bandeja"]
-```
-
-A extensão (`extension/src`) injeta `page_hook.js` no contexto da página, repassa as capturas pelo `bridge.js` ao service worker (`background.js`) e este as envia pelo WebSocket. No app (`src/neuralmeter`), `server/` recebe e valida as mensagens, `db.py` persiste em SQLite, `engine/` calcula as janelas (Claude, ChatGPT, semanal, peso e calibração) e `ui/` renderiza o HUD, a bandeja e os avisos em PySide6. `privacy.py` e `config.py` cuidam de privacidade e configuração.
-
-## Cotas e cálculo
-
-- **Claude**: a janela de 5h começa na primeira mensagem e termina no reset oficial quando o servidor o informa. Cada mensagem pesa conforme o contexto acumulado da conversa, já que o histórico é reenviado a cada turno.
-- **Claude Code CLI (opt-in)**: lê autenticação local existente em `~/.claude/.credentials.json` para autorizar consulta de quota oficial em `api.anthropic.com`; token só fica em memória, não vai para configurações, SQLite, logs ou HUD. Não lê cookies nem transcrições de prompts. Codex CLI / Work (opt-in) usa autenticação gerida pelo CLI oficial e app-server oficial; buckets ficam separados do ChatGPT Web.
-- **Antigravity (experimental, opt-in)**: consulta endpoints loopback da instância IDE identificada, sem acessar prompts, transcripts, cookies ou OAuth externo. Protocolo local é não oficial/comunitário. Fontes/limites sem resposta aparecem desconhecidos, nunca `0%` inventado. CLI oficial Antigravity documenta `statusLine` com JSON `quota`, mas exige configuração explícita do usuário; NeuralMeter não altera settings.
-- Mudança local de credencial/processo invalida snapshot via keyed-HMAC efêmero em memória; watcher local limitado a 2,5 s, sem polling de rede adicional. Se serviço não expõe ID estável, UI declara identidade desconhecida; troca interna sem sinal detectável pode esperar próximo poll.
-- **Exibição por quota**: bandeja → **Quotas exibidas…** seleciona fontes/janelas/buckets individualmente depois que IDs aparecem. Seleção visual não conecta CLI; conexão exige opt-in separado. Gemini Web continua atividade experimental, sem quota oficial, distinta de Antigravity.
-- **ChatGPT**: cada mensagem expira individualmente, por modelo, com janela padrão de 3h (5h configurável).
-- **Semanal**: uso acumulado em uma janela de 7 dias.
-- **Tetos padrão**: 45 unidades na janela de 5h e 500 na semanal; ambos editáveis pela bandeja.
-- **PREMISSAs**: sem captura (HAR) real, os tetos e as cotas por modelo são valores estimados até que bloqueios reais calibrem o app.
-
-```mermaid
-flowchart LR
-  A["Bloqueio detectado (banner ou JSON)"] --> B["Uso cravado em 100%"]
-  B --> C["Horário oficial de reset salvo"]
-  C --> D["Teto recalibrado"]
-  D --> E["Próximas janelas usam o novo teto"]
-```
-
-## Stack
-
-| Camada | Escolha |
-| --- | --- |
-| Interface | PySide6 (HUD frameless, bandeja, toast) |
-| Comunicação | `websockets` em loopback (`127.0.0.1:8765`) |
-| Persistência | `sqlite3` nativo em modo WAL |
-| Extensão | JavaScript puro, Manifest V3, sem build |
-| Empacotamento | PyInstaller onefile e instalador Inno Setup 6 |
-| Gerenciador | `uv` com Python 3.13 |
-
-## Início rápido
-
-### Instalação (usuário)
-
-1. Antes de instalar/atualizar, feche manualmente processos antigos do NeuralMeter. Baixe `NeuralMeter-Setup.exe` (alias estável da release mais recente) e `NeuralMeter-Bridge-0.2.2.zip` da [release mais recente](https://github.com/dtdias/neural-meter/releases/latest). Rode setup: instalação por usuário em `%LOCALAPPDATA%\Programs\NeuralMeter`, **sem admin**. Tarefas opcionais: atalho na área de trabalho e iniciar com Windows.
-   - Instalador e EXE não têm assinatura digital; Windows pode exibir aviso de segurança.
-2. Instale a extensão **NeuralMeter Bridge** (Chrome, Edge, Brave ou Opera):
-   1. Extraia `NeuralMeter-Bridge-0.2.2.zip` em pasta temporária.
-    2. Abra `chrome://extensions` (ou `edge://extensions`) e ative o **Modo do desenvolvedor**.
-   3. Substitua arquivos na pasta da extensão já carregada ou clique **Carregar sem compactação** e selecione nova pasta extraída. ZIP não é instalado diretamente.
-   4. Recarregue NeuralMeter Bridge e abas dos provedores.
-3. Abra NeuralMeter e use claude.ai / chatgpt.com normalmente. Gemini Web mostra contagens locais experimentais; quotas/reset permanecem desconhecidos.
-4. Bandeja → **Quotas exibidas…** para escolher fontes/janelas/buckets visíveis. Isso não habilita coleta. Habilite coleta separadamente: **Conectar Claude CLI**, **Conectar Codex CLI**, **Conectar Antigravity (experimental)**. Desabilite cada item para desconectar.
-
-Para desinstalar: Configurações do Windows, Aplicativos, NeuralMeter. Os dados em `%LOCALAPPDATA%\NeuralMeter` são mantidos; apague a pasta para remover tudo.
-
-### Desenvolvimento
-
-Python via [`uv`](https://docs.astral.sh/uv/) (3.13).
+Requer Windows, Python 3.12+ (projeto usa `uv`/Python 3.13), Node não é necessário.
 
 ```powershell
-uv sync                                  # dependências
-uv run neuralmeter                       # rodar o app
-uv run neuralmeter --server-only         # só servidor WS, sem UI (Ctrl+C para parar)
+uv sync
+uv run neuralmeter
+uv run neuralmeter --self-test
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest
+uv run python scripts/perf_check.py --json
+uv run python scripts/build_exe.py --smoke
+uv run python scripts/build_installer.py [--skip-exe]
 ```
 
-## Qualidade
+O teste de desempenho usa fonte Qt sintética; não consulta quotas reais. Testes de integração browser/extension são N/A porque feature removida. Instalador gera somente Setup; ISCC ausente → exit 2 com instrução de instalação manual do Inno Setup.
 
-```powershell
-uv run pytest                                          # testes do app
-uv run ruff check .                                    # lint
-uv run ruff format --check .                           # formatação
-cd extension; npm test                                 # testes da extensão
-uv run python scripts/perf_check.py                    # RNF01/RNF02 (porta 8765 livre, ~45 s)
-uv run python scripts/build_exe.py --smoke             # dist/NeuralMeter.exe + smoke
-uv run python scripts/build_installer.py [--skip-exe]  # instalador + zip da extensão
-```
+## Escopo e limitações
 
-Os testes cobrem motor de janelas/calibração, DB/privacidade, protocolo/WS, HUD e capturas Claude/ChatGPT/Gemini (fixtures sintéticas); captura Gemini não validada em navegador real. O instalador exige Inno Setup 6 (`winget install --id JRSoftware.InnoSetup -e --scope user`); saídas em `dist/`.
+- Claude Code: quota OAuth depende de autenticação/sessão local compatível; estado de autenticação não equivale a quota confirmada.
+- Codex CLI: quotas retornadas pelo app-server oficial; não representa ChatGPT Web.
+- Antigravity IDE: conector experimental de serviço local; API, disponibilidade e quotas reais não garantidas.
+- Limites/reset omitidos, vencidos ou incompatíveis aparecem desconhecidos; não inferir `0%`.
+- Meta de latência da suíte perf cobre apenas sinal sintético collector→Qt, não resposta real do provider.
 
-## Privacidade e operação
-
-- Todos os dados ficam locais, em SQLite no seu perfil do Windows.
-- Por padrão guarda só contagem de caracteres/tokens e metadados; o texto do prompt nunca é gravado.
-- O WebSocket escuta somente em `127.0.0.1` e aceita apenas `Origin` de `chrome-extension://`.
-- NeuralMeter não inicia fluxo de login nem usa proxy/CAPTCHA. Extensão nunca envia prompts; captura de navegador é passiva. Conector Claude CLI usa autenticação local existente para consulta de quota; token somente em memória; sem cookies/transcrições de prompts.
-- No modo privado, os IDs de conversa são gravados como hash com salt local.
-- Apagar o histórico é uma ação da bandeja.
-
-## Documentação
-
-- [`prd.md`](prd.md): requisitos e roadmap.
-- [`progress.md`](progress.md): estado de execução e decisões.
-- [`AGENTS.md`](AGENTS.md): regras operacionais e comandos do repositório.
-- [`extension/README.md`](extension/README.md): extensão NeuralMeter Bridge.
-- [`packaging/neuralmeter.iss`](packaging/neuralmeter.iss): script do instalador Inno Setup.
-- [`scripts/build_installer.py`](scripts/build_installer.py): geração do instalador e do zip da extensão.
-- [`scripts/build_exe.py`](scripts/build_exe.py): build do executável PyInstaller.
-- [`scripts/perf_check.py`](scripts/perf_check.py): medição de RAM, CPU e latência.
-
-## Notas de escopo
-
-- Não é uma ferramenta oficial da Anthropic nem da OpenAI; os valores são estimativas.
-- As capturas de envio e de limite seguem **premissas** (sem HAR real) até serem validadas.
-- A latência do envio no navegador até o HUD não foi medida; só o trecho WebSocket para HUD e o uso de recursos do app.
-- Instalador e executável não são assinados.
-- Somente Windows e navegadores Chromium; sem Firefox e sem MSI.
-
----
-
-Feito para você enxergar o limite antes de ele aparecer como bloqueio.
-
-Desenvolvido por **Daniel Trajano Dias** · [`@dtdias`](https://github.com/dtdias)
+Requisitos e decisões históricas em [`prd.md`](prd.md), progresso em [`progress.md`](progress.md), instruções de desenvolvimento em [`AGENTS.md`](AGENTS.md).

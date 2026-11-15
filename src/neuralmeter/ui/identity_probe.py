@@ -7,6 +7,13 @@ import threading
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+IDENTITY_UNSEEN = object()
+
+
+def identity_changed(previous, current) -> bool:
+    """Only compare after first probe; stable missing identity is a valid baseline."""
+    return previous is not IDENTITY_UNSEEN and current != previous
+
 
 class IdentityProbeManager(QObject):
     result = Signal(str, int, int, object)

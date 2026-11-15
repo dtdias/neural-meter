@@ -1,9 +1,25 @@
-# Documento de Requisitos de Produto (PRD) — NeuralMeter v1.0
+# Documento de Requisitos de Produto (PRD) — NeuralMeter CLI-only
 
 **Produto:** NeuralMeter  
-**Plataforma:** Windows Desktop + Extensão de Navegador (Chromium/Firefox)  
-**Versão:** 1.0 (MVP)  
-**Status:** Especificação  
+**Plataforma:** Windows Desktop
+**Versão:** 0.2.x (CLI-only transition)
+**Status:** Especificação vigente: seção 0; seções anteriores preservadas como histórico, não normativas.
+
+---
+
+## 0. Escopo vigente — 2026-11-15
+
+Este escopo substitui requisitos anteriores de browser/Manifest V3/WebSocket. NeuralMeter monitora somente **Claude Code**, **Codex CLI** e **Antigravity IDE experimental**. Não existe conexão com Claude Web, ChatGPT Web, Gemini Web, browser, extensão ou servidor WebSocket; fontes Web antigas e release notes continuam como histórico, sem reativação nem alteração retroativa de release.
+
+- HUD visível mostra as três fontes, descoberta local explícita, estados de instalação/autenticação/consentimento/quota separados, controles Conectar/Desconectar, conectar fontes detectadas e atualizar quotas autorizadas.
+- Descoberta é local, read-only e não autoriza coleta. Consentimento opt-in persiste por fonte; preferências de exibição são independentes e preservadas.
+- Quota somente por consultas read-only permitidas: Claude Code OAuth/sessão existente, app-server oficial Codex com refresh desabilitado, serviço loopback do Antigravity com listener identificado. Sem login, refresh, inferência, browser, varredura de portas, alteração de settings/processos ou persistência de credenciais/snapshots.
+- Limite/reset ausente, expirado ou incompatível permanece desconhecido; nunca exibir `0%` como substituto. Auth detectada não significa quota disponível. Antigravity permanece experimental e não se confunde com Gemini CLI/Web.
+- Dados SQLite e configurações existentes permanecem intactos na migração; nenhum purge/migração destrutiva por remoção de browser. Retenção histórica não é aplicada automaticamente nesta inicialização CLI-only.
+- Build/installer entregam somente app/Setup. Testes de browser/extensão são N/A por feature removida, não gates aprovados.
+- Perf CLI-only mede processo isolado e entrega Qt sintética; não mede consulta real, rede, browser nem usuário. Limites e lacunas devem ser declarados.
+
+As seções 1 em diante documentam versão histórica com arquitetura browser. Em caso de divergência, seção 0 prevalece; não implementar requisitos Web legados.
 
 ---
 

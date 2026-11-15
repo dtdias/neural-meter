@@ -6,7 +6,7 @@ def test_self_test_ok(tmp_path, monkeypatch):
     out = tmp_path / "out.txt"
     assert main(["--self-test", "--self-test-out", str(out)]) == 0
     lines = out.read_text(encoding="utf-8").splitlines()
-    assert len(lines) == 5
+    assert len(lines) == 4
     assert all(line.endswith(": ok") for line in lines)
 
 
@@ -17,4 +17,15 @@ def test_self_test_fail_icon(tmp_path, monkeypatch):
     assert main(["--self-test", "--self-test-out", str(out)]) == 1
     text = out.read_text(encoding="utf-8")
     assert "app_icon: FAIL" in text
-    assert text.count(": ok") == 4
+    assert text.count(": ok") == 3
+
+
+def test_legacy_server_only_exits_without_starting_socket(capsys, monkeypatch):
+    import socket
+
+    def forbidden_bind(*_args, **_kwargs):
+        raise AssertionError("CLI-only app must not bind sockets")
+
+    monkeypatch.setattr(socket.socket, "bind", forbidden_bind)
+    assert main(["--server-only"]) == 2
+    assert "somente fontes CLI" in capsys.readouterr().out
