@@ -96,7 +96,7 @@ A extensão (`extension/src`) injeta `page_hook.js` no contexto da página, repa
 ## Cotas e cálculo
 
 - **Claude**: a janela de 5h começa na primeira mensagem e termina no reset oficial quando o servidor o informa. Cada mensagem pesa conforme o contexto acumulado da conversa, já que o histórico é reenviado a cada turno.
-- **Claude Code CLI (opt-in)**: item "Conectar Claude CLI" consulta somente quota OAuth oficial em `api.anthropic.com`; HUD mantém fonte separada. **Codex CLI / Work (opt-in)** usa app-server oficial: `initialize` → `initialized` → `account/read` sem refresh → `account/rateLimits/read`; exibe buckets/limites reportados, nunca ChatGPT Web.
+- **Claude Code CLI (opt-in)**: lê autenticação local existente em `~/.claude/.credentials.json` para autorizar consulta de quota oficial em `api.anthropic.com`; token só fica em memória, não vai para configurações, SQLite, logs ou HUD. Não lê cookies nem transcrições de prompts. Codex CLI / Work (opt-in) usa autenticação gerida pelo CLI oficial e app-server oficial; buckets ficam separados do ChatGPT Web.
 - **Antigravity (experimental, opt-in)**: consulta endpoints loopback da instância IDE identificada, sem acessar prompts, transcripts, cookies ou OAuth externo. Protocolo local é não oficial/comunitário. Fontes/limites sem resposta aparecem desconhecidos, nunca `0%` inventado. CLI oficial Antigravity documenta `statusLine` com JSON `quota`, mas exige configuração explícita do usuário; NeuralMeter não altera settings.
 - Mudança local de credencial/processo invalida snapshot via keyed-HMAC efêmero em memória; watcher local limitado a 2,5 s, sem polling de rede adicional. Se serviço não expõe ID estável, UI declara identidade desconhecida; troca interna sem sinal detectável pode esperar próximo poll.
 - **Exibição por quota**: bandeja → **Quotas exibidas…** seleciona fontes/janelas/buckets individualmente depois que IDs aparecem. Seleção visual não conecta CLI; conexão exige opt-in separado. Gemini Web continua atividade experimental, sem quota oficial, distinta de Antigravity.
@@ -128,14 +128,15 @@ flowchart LR
 
 ### Instalação (usuário)
 
-1. Baixe `NeuralMeter-Setup.exe` e `NeuralMeter-Bridge-0.2.1.zip` da [Release v0.2.1](https://github.com/dtdias/neural-meter/releases/tag/v0.2.1). Rode o setup: instalação por usuário em `%LOCALAPPDATA%\Programs\NeuralMeter`, **sem admin**. Tarefas opcionais: atalho na área de trabalho e iniciar com o Windows.
-   - O instalador **não é assinado**: o SmartScreen pode avisar ("Windows protegeu seu PC"). Clique em **Mais informações** e depois **Executar assim mesmo**.
+1. Antes de instalar/atualizar, feche manualmente processos antigos do NeuralMeter. Baixe `NeuralMeter-Setup.exe` (alias estável da release mais recente) e `NeuralMeter-Bridge-0.2.2.zip` da [release mais recente](https://github.com/dtdias/neural-meter/releases/latest). Rode setup: instalação por usuário em `%LOCALAPPDATA%\Programs\NeuralMeter`, **sem admin**. Tarefas opcionais: atalho na área de trabalho e iniciar com Windows.
+   - Instalador e EXE não têm assinatura digital; Windows pode exibir aviso de segurança.
 2. Instale a extensão **NeuralMeter Bridge** (Chrome, Edge, Brave ou Opera):
-   1. Descompacte `NeuralMeter-Bridge-0.2.1.zip` em uma pasta fixa.
-   2. Abra `chrome://extensions` (ou `edge://extensions`) e ative o **Modo do desenvolvedor**.
-   3. Clique em **Carregar sem compactação** e selecione a pasta descompactada.
+   1. Extraia `NeuralMeter-Bridge-0.2.2.zip` em pasta temporária.
+    2. Abra `chrome://extensions` (ou `edge://extensions`) e ative o **Modo do desenvolvedor**.
+   3. Substitua arquivos na pasta da extensão já carregada ou clique **Carregar sem compactação** e selecione nova pasta extraída. ZIP não é instalado diretamente.
+   4. Recarregue NeuralMeter Bridge e abas dos provedores.
 3. Abra NeuralMeter e use claude.ai / chatgpt.com normalmente. Gemini Web mostra contagens locais experimentais; quotas/reset permanecem desconhecidos.
-4. Configure **Quotas exibidas…** na bandeja. Para coleta, habilite cada item independente: **Conectar Claude CLI**, **Conectar Codex CLI**, **Conectar Antigravity (experimental)**. Desabilite para desconectar.
+4. Bandeja → **Quotas exibidas…** para escolher fontes/janelas/buckets visíveis. Isso não habilita coleta. Habilite coleta separadamente: **Conectar Claude CLI**, **Conectar Codex CLI**, **Conectar Antigravity (experimental)**. Desabilite cada item para desconectar.
 
 Para desinstalar: Configurações do Windows, Aplicativos, NeuralMeter. Os dados em `%LOCALAPPDATA%\NeuralMeter` são mantidos; apague a pasta para remover tudo.
 
@@ -168,7 +169,7 @@ Os testes cobrem motor de janelas/calibração, DB/privacidade, protocolo/WS, HU
 - Todos os dados ficam locais, em SQLite no seu perfil do Windows.
 - Por padrão guarda só contagem de caracteres/tokens e metadados; o texto do prompt nunca é gravado.
 - O WebSocket escuta somente em `127.0.0.1` e aceita apenas `Origin` de `chrome-extension://`.
-- Sem login, proxy ou bypass de CAPTCHA; nenhuma requisição a claude.ai/chatgpt.com é feita fora do navegador, e a extensão nunca envia prompts.
+- NeuralMeter não inicia fluxo de login nem usa proxy/CAPTCHA. Extensão nunca envia prompts; captura de navegador é passiva. Conector Claude CLI usa autenticação local existente para consulta de quota; token somente em memória; sem cookies/transcrições de prompts.
 - No modo privado, os IDs de conversa são gravados como hash com salt local.
 - Apagar o histórico é uma ação da bandeja.
 
