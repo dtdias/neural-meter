@@ -1,8 +1,10 @@
-"""Ponto de entrada da UI: HUD + servidor WS."""
+"""Ponto de entrada da UI CLI-only."""
 
+import json
+import os
 import signal
 import sys
-from datetime import UTC, datetime
+from pathlib import Path
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
@@ -14,27 +16,27 @@ from neuralmeter.antigravity import (
 )
 from neuralmeter.claude_cli import CliSnapshot, QuotaPoller, credential_identity
 from neuralmeter.codex_cli import CodexSnapshot, codex_auth_metadata_identity, read_codex_quota
+from neuralmeter.config import get_data_dir
 from neuralmeter.db import connect_db
-from neuralmeter.engine import DEFAULT_CHATGPT_LIMITS, calibrated_chatgpt_limits
-from neuralmeter.privacy import apply_retention
-from neuralmeter.server import start_ws_server
 from neuralmeter.ui.collector_lifecycle import CollectorLifecycle
+from neuralmeter.ui.connections_dialog import ConnectionsDialog
 from neuralmeter.ui.hud import HudWindow, UpdateBridge
 from neuralmeter.ui.icons import load_app_icon
-from neuralmeter.ui.identity_probe import IdentityProbeGate, IdentityProbeManager
+from neuralmeter.ui.identity_probe import (
+    IDENTITY_UNSEEN,
+    IdentityProbeGate,
+    IdentityProbeManager,
+    identity_changed,
+)
 from neuralmeter.ui.quota_delivery import QuotaDeliveryGate
 from neuralmeter.ui.settings import (
     clamp_opacity,
-    ensure_privacy_salt,
     load_settings,
-    parse_model_limits,
-    parse_privacy_settings,
+    migrate_cli_quota_visibility,
     parse_quota_visibility,
-    parse_weight_params,
     save_settings,
 )
 from neuralmeter.ui.tray import build_tray
-from neuralmeter.ui.view_model import load_hud_view
 
 
 def run_app(argv: list[str] | None = None) -> int:
@@ -44,6 +46,8 @@ def run_app(argv: list[str] | None = None) -> int:
     if app_icon is not None:
         app.setWindowIcon(app_icon)
     settings = load_settings()
+    if migrate_cli_quota_visibility(settings):
+        save_settings(settings)
     db = connect_db()
     bridge = UpdateBridge()
     cli_enabled = bool(settings.get("claude_cli_enabled", False))
@@ -52,13 +56,30 @@ def run_app(argv: list[str] | None = None) -> int:
     quota_visibility = parse_quota_visibility(settings.get("quota_visibility"))
     collectors = CollectorLifecycle()
     source_local_identity: dict[str, str | None] = {}
+    connections_dialog = None
+    tray = None
+
+    def sync_connector(source: str, enabled: bool) -> None:
+        if connections_dialog is not None:
+            connections_dialog.set_enabled(source, enabled)
+        if tray is None:
+            return
+        action = {
+            "claude": tray.act_cli,
+            "codex": tray.act_codex,
+            "antigravity": tray.act_antigravity,
+        }[source]
+        action.blockSignals(True)
+        action.setChecked(enabled)
+        labels = {
+            "claude": "Claude CLI",
+            "codex": "Codex CLI",
+            "antigravity": "Antigravity (experimental)",
+        }
+        action.setText(f"Desconectar {labels[source]}" if enabled else f"Conectar {labels[source]}")
+        action.blockSignals(False)
 
     def route_snapshot(source, snapshot) -> None:
-        local_identity = getattr(snapshot, "local_identity", None)
-        if source == "claude":
-            local_identity = getattr(snapshot, "identity", None)
-        if local_identity is not None:
-            source_local_identity[source] = local_identity
         if source == "claude":
             publish_cli(snapshot)
         elif source == "codex":
@@ -102,6 +123,7 @@ def run_app(argv: list[str] | None = None) -> int:
             "cli",
             {
                 "status": snapshot.status,
+                "auth_status": snapshot.auth_status,
                 "observed_at": snapshot.observed_at,
                 "five_hour": {
                     "percent": snapshot.five_hour.percent,
@@ -113,12 +135,15 @@ def run_app(argv: list[str] | None = None) -> int:
                 },
             },
         )
+        if connections_dialog is not None:
+            connections_dialog.update_status("claude", snapshot.status, snapshot.auth_status)
 
     def set_cli_enabled(value: bool) -> None:
         nonlocal cli_enabled
         cli_enabled = bool(value)
         settings["claude_cli_enabled"] = cli_enabled
         save_settings(settings)
+        sync_connector("claude", cli_enabled)
         if cli_enabled:
             hud.set_cli_status({"status": "unknown"})
             start_claude_poller()
@@ -146,12 +171,22 @@ def run_app(argv: list[str] | None = None) -> int:
                 "coverage_partial": snapshot.coverage_partial,
             },
         )
+        if connections_dialog is not None:
+            auth_status = (
+                "authenticated"
+                if snapshot.status == "available"
+                else snapshot.status
+                if snapshot.status in {"not_authenticated", "auth_required", "unsupported_auth"}
+                else "unknown"
+            )
+            connections_dialog.update_status("codex", snapshot.status, auth_status)
 
     def set_codex_enabled(value: bool) -> None:
         nonlocal codex_enabled
         codex_enabled = bool(value)
         settings["codex_cli_enabled"] = codex_enabled
         save_settings(settings)
+        sync_connector("codex", codex_enabled)
         if codex_enabled:
             hud.set_codex_status({"status": "unknown"})
             start_codex_poller()
@@ -179,12 +214,15 @@ def run_app(argv: list[str] | None = None) -> int:
                 ],
             },
         )
+        if connections_dialog is not None:
+            connections_dialog.update_status("antigravity", snapshot.status, "unknown")
 
     def set_antigravity_enabled(value: bool) -> None:
         nonlocal antigravity_enabled
         antigravity_enabled = bool(value)
         settings["antigravity_enabled"] = antigravity_enabled
         save_settings(settings)
+        sync_connector("antigravity", antigravity_enabled)
         if antigravity_enabled:
             hud.set_antigravity_status({"status": "unknown"})
             start_antigravity_poller()
@@ -221,9 +259,9 @@ def run_app(argv: list[str] | None = None) -> int:
             return
         if not identity_probes.is_current(source, epoch, generation):
             return
-        previous = source_local_identity.get(source)
+        previous = source_local_identity.get(source, IDENTITY_UNSEEN)
         source_local_identity[source] = current
-        if previous is None or current == previous:
+        if not identity_changed(previous, current):
             return
         if source == "claude":
             hud.set_cli_status({"status": "identity_changed"})
@@ -249,18 +287,10 @@ def run_app(argv: list[str] | None = None) -> int:
             if enabled and collectors.is_current(source, collectors.generation(source)):
                 identity_probes.schedule(source, collectors.generation(source))
 
-    def model_limits() -> dict:
-        return {
-            **DEFAULT_CHATGPT_LIMITS,
-            **calibrated_chatgpt_limits(db),
-            **parse_model_limits(settings.get("chatgpt_model_limits")),
-        }
-
     # Sem tray, click-through prenderia o usuario: forca desligado.
     tray_ok = QSystemTrayIcon.isSystemTrayAvailable()
     hud = HudWindow(
         on_moved=on_moved,
-        view_loader=lambda now: load_hud_view(db, now, chatgpt_limits=model_limits()),
         compact=bool(settings.get("compact")),
         on_compact_changed=on_compact_changed,
         opacity=clamp_opacity(settings.get("opacity")),
@@ -268,10 +298,26 @@ def run_app(argv: list[str] | None = None) -> int:
     )
     bridge.updated.connect(hud.on_update)
     hud.set_quota_visibility(quota_visibility, resize=False)
-    hud.cli_status.setText(
-        "Claude CLI: aguardando opt-in" if not cli_enabled else "Claude CLI: verificando"
+
+    def toggle_source(source: str, enabled: bool) -> None:
+        {
+            "claude": set_cli_enabled,
+            "codex": set_codex_enabled,
+            "antigravity": set_antigravity_enabled,
+        }[source](enabled)
+
+    def refresh_collectors(sources: tuple[str, ...]) -> None:
+        for source in sources:
+            collectors.refresh(source)
+
+    connections_dialog = ConnectionsDialog(
+        {"claude": cli_enabled, "codex": codex_enabled, "antigravity": antigravity_enabled},
+        toggle_source,
+        hud,
+        on_refresh=refresh_collectors,
     )
-    hud.cli_status.setVisible(cli_enabled)
+    hud.set_connections_callback(connections_dialog.show)
+    hud.set_cli_status({"status": "unknown" if cli_enabled else "not_connected"})
     if cli_enabled:
         start_claude_poller()
     if codex_enabled:
@@ -290,43 +336,23 @@ def run_app(argv: list[str] | None = None) -> int:
     keepalive.timeout.connect(lambda: None)
     keepalive.start(500)
 
-    if ensure_privacy_salt(settings):
-        save_settings(settings)
-    privacy = parse_privacy_settings(settings)
-    apply_retention(db, datetime.now(UTC), privacy.retention_days)
-    retention_timer = QTimer()
-    retention_timer.timeout.connect(
-        lambda: apply_retention(db, datetime.now(UTC), privacy.retention_days)
-    )
-    retention_timer.start(6 * 60 * 60 * 1000)
     identity_timer = QTimer()
     identity_timer.timeout.connect(schedule_identity_probes)
     identity_timer.start(2500)
     schedule_identity_probes()
 
-    server = start_ws_server(
-        db,
-        on_update=bridge.emit_update,
-        weight_params=parse_weight_params(settings.get("claude_weight")),
-        privacy=privacy,
-    )
-
     def on_privacy_changed(value: bool) -> None:
-        nonlocal privacy
         raw = settings.get("privacy")
         settings["privacy"] = {
             **(raw if isinstance(raw, dict) else {}),
             "hash_conversation_ids": value,
         }
         save_settings(settings)
-        privacy = parse_privacy_settings(settings)
-        server.set_privacy(privacy)
 
     def quit_app() -> None:
         identity_timer.stop()
         identity_probes.stop()
         collectors.shutdown()
-        server.stop()
         app.quit()
 
     def on_notify_changed(value: bool) -> None:
@@ -346,7 +372,11 @@ def run_app(argv: list[str] | None = None) -> int:
         conn=db,
         notify_renewal=bool(settings.get("notify_renewal", True)),
         on_notify_changed=on_notify_changed,
-        privacy_hash=privacy.hash_conversation_ids,
+        privacy_hash=bool(
+            (settings.get("privacy") or {}).get("hash_conversation_ids", True)
+            if isinstance(settings.get("privacy"), dict)
+            else True
+        ),
         on_privacy_changed=on_privacy_changed,
         cli_enabled=cli_enabled,
         on_cli_changed=set_cli_enabled,
@@ -360,6 +390,23 @@ def run_app(argv: list[str] | None = None) -> int:
     if tray_ok:
         tray.show()
     hud.show()
+
+    def signal_perf_ready() -> None:
+        ready_file = os.environ.get("NEURALMETER_PERF_READY_FILE")
+        nonce = os.environ.get("NEURALMETER_PERF_NONCE")
+        if not ready_file or not nonce:
+            return
+        target = Path(ready_file).resolve()
+        if target.name != ".neuralmeter-perf-ready.json":
+            return
+        if target.parent != get_data_dir().resolve():
+            return
+        temporary = target.with_name(".neuralmeter-perf-ready.tmp")
+        temporary.write_text(json.dumps({"pid": os.getpid(), "nonce": nonce}), encoding="utf-8")
+        temporary.replace(target)
+
+    if os.environ.get("NEURALMETER_PERF_READY_FILE"):
+        QTimer.singleShot(0, signal_perf_ready)
     try:
         return app.exec()
     finally:
@@ -368,4 +415,3 @@ def run_app(argv: list[str] | None = None) -> int:
         identity_probes.join(timeout=5)
         collectors.shutdown()
         collectors.join_all(timeout=5)
-        server.stop()

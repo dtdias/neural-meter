@@ -73,6 +73,7 @@ class TrayController(QSystemTrayIcon):
         self.quota_visibility = dict(quota_visibility or {})
         self.on_quota_visibility_changed = on_quota_visibility_changed
         self.hud = hud
+        hud.request_quota_visibility.connect(self._configure_quota_visibility)
         self.conn = conn
         self.on_limits_saved = on_limits_saved
         self.on_notify_changed = on_notify_changed

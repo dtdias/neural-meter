@@ -21,16 +21,11 @@ from neuralmeter.ui.settings import (
 )
 
 QUOTA_LABELS = {
-    "claude_web_5h": "Claude Web · 5h",
-    "claude_web_weekly": "Claude Web · semanal",
-    "claude_cli_5h": "Claude CLI · 5h",
-    "claude_cli_weekly": "Claude CLI · semanal",
-    "chatgpt_web_5h": "ChatGPT Web · 5h",
-    "chatgpt_web_weekly": "ChatGPT Web · semanal",
+    "claude_cli_5h": "Claude Code · 5h",
+    "claude_cli_weekly": "Claude Code · 7d",
     "codex_cli_primary": "Codex CLI / Work · limite primário",
     "codex_cli_secondary": "Codex CLI / Work · limite secundário",
-    "gemini_web_activity": "Gemini Web · atividade estimada (não é quota oficial)",
-    "antigravity": "Antigravity · exibir buckets detectados",
+    "antigravity": "Antigravity IDE · buckets detectados (experimental)",
 }
 
 
@@ -40,7 +35,7 @@ class QuotaVisibilityDialog(QDialog):
         self.setWindowTitle("Quotas exibidas")
         values = parse_quota_visibility(selection)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Seleção de exibição não conecta CLI nem autoriza coleta."))
+        layout.addWidget(QLabel("Seleção controla somente exibição; não autoriza coleta CLI."))
         self.checkboxes: dict[str, QCheckBox] = {}
         available = available if isinstance(available, dict) else {}
         by_source = {

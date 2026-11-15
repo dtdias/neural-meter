@@ -12,6 +12,7 @@ from neuralmeter.claude_cli import (
     _NoRedirect,
     _run_cli_metadata,
     _timestamp,
+    cli_auth_status,
     credential_identity,
     parse_usage,
     read_usage,
@@ -72,6 +73,51 @@ def test_cli_metadata_subprocess_has_bounded_output_and_no_auth_env(monkeypatch)
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in captured["kwargs"]["env"]
 
 
+def test_cli_auth_status_accepts_public_claude_code_auth_shapes(monkeypatch):
+    from neuralmeter import claude_cli
+
+    payloads = (
+        {"loggedIn": True, "authMethod": "claude.ai", "apiProvider": "firstParty"},
+        {"loggedIn": True, "authMethod": "claudeAi", "apiProvider": "firstParty"},
+        {"loggedIn": True, "authMethod": "CLAUDE.AI", "apiProvider": "firstParty"},
+        {"loggedIn": True, "authMethod": "oauth"},
+        {"loggedIn": True, "apiProvider": "firstParty"},
+    )
+    for payload in payloads:
+        monkeypatch.setattr(
+            claude_cli,
+            "_run_cli_metadata",
+            lambda *_args, document=payload: json.dumps(document).encode(),
+        )
+        assert cli_auth_status("C:/trusted/claude.exe") == "authenticated"
+
+
+def test_cli_auth_status_rejects_untrusted_or_invalid_auth_shapes(monkeypatch):
+    from neuralmeter import claude_cli
+
+    payloads = (
+        {"loggedIn": False, "authMethod": "claude.ai", "apiProvider": "firstParty"},
+        {"loggedIn": True, "authMethod": "api_key", "apiProvider": "firstParty"},
+        {"loggedIn": True, "authMethod": "claude.ai", "apiProvider": "thirdParty"},
+        {"loggedIn": True, "apiProvider": "thirdParty"},
+        {"loggedIn": True, "authMethod": 7, "apiProvider": "firstParty"},
+        {"loggedIn": True},
+        [],
+    )
+    for payload in payloads:
+        monkeypatch.setattr(
+            claude_cli,
+            "_run_cli_metadata",
+            lambda *_args, document=payload: json.dumps(document).encode(),
+        )
+        expected = (
+            "not_authenticated"
+            if isinstance(payload, dict) and payload.get("loggedIn") is False
+            else "unsupported_auth"
+        )
+        assert cli_auth_status("C:/trusted/claude.exe") == expected
+
+
 def test_read_usage_requires_cli_and_does_not_touch_credential(tmp_path, monkeypatch):
     file = tmp_path / ".credentials.json"
     original = b'{"claudeAiOauth":{"accessToken":"sentinel"}}'
@@ -86,7 +132,8 @@ def test_bad_or_missing_credentials_are_sanitized(tmp_path, monkeypatch):
     monkeypatch.setattr("neuralmeter.claude_cli.discover_claude", lambda: "C:/claude.exe")
     monkeypatch.setattr("neuralmeter.claude_cli.cli_auth_status", lambda _: "authenticated")
     snap = read_usage(path=tmp_path / "missing")
-    assert snap.status == "not_authenticated"
+    assert snap.status == "quota_unavailable"
+    assert snap.auth_status == "authenticated"
     credential = tmp_path / "bad"
     credential.write_text("not-json", encoding="utf-8")
     assert read_usage(path=credential).status == "request_failed"
@@ -102,13 +149,17 @@ def test_auth_token_sent_only_to_fixed_url_and_never_in_snapshot(tmp_path, monke
                     "accessToken": token,
                     "expiresAt": 4102444800000,
                     "scopes": ["user:profile"],
-                }
+                },
+                "apiProvider": "firstParty",
             }
         ),
         encoding="utf-8",
     )
     monkeypatch.setattr("neuralmeter.claude_cli.discover_claude", lambda: "C:/trusted/claude.exe")
-    monkeypatch.setattr("neuralmeter.claude_cli.cli_auth_status", lambda _: "authenticated")
+    monkeypatch.setattr(
+        "neuralmeter.claude_cli._run_cli_metadata",
+        lambda *_args: b'{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty"}',
+    )
 
     class Response:
         def geturl(self):
@@ -130,6 +181,7 @@ def test_auth_token_sent_only_to_fixed_url_and_never_in_snapshot(tmp_path, monke
 
     snap = read_usage(path=creds, opener=Opener())
     assert snap.status == "available"
+    assert snap.auth_status == "authenticated"
     assert snap.five_hour.percent == 25 and snap.seven_day.percent == 50
     assert token not in repr(snap)
     assert snap.identity is not None and len(snap.identity) == 64
@@ -216,7 +268,7 @@ def test_expired_credential_does_not_send_request(tmp_path, monkeypatch):
             raise AssertionError("expired token must not be sent")
 
     original = credential.read_bytes()
-    assert read_usage(path=credential, opener=MustNotOpen()).status == "token_expired"
+    assert read_usage(path=credential, opener=MustNotOpen()).status == "quota_unavailable"
     assert credential.read_bytes() == original
 
 
@@ -251,7 +303,8 @@ def test_http_failures_are_sanitized_and_429_retry_is_bounded(tmp_path, monkeypa
     assert limited.status == "rate_limited" and limited.retry_after == 3600
     FailingOpener.code = 401
     unauthorized = read_usage(path=credential, opener=FailingOpener())
-    assert unauthorized.status == "token_expired" and unauthorized.retry_after is None
+    assert unauthorized.status == "quota_unavailable" and unauthorized.retry_after is None
+    assert unauthorized.auth_status == "authenticated"
     assert "secret-marker" not in repr((limited, unauthorized))
 
 
@@ -271,3 +324,44 @@ def test_poller_stops_and_suppresses_late_result():
     release.set()
     time.sleep(0.05)
     assert seen == []
+
+
+def test_manual_refresh_wakes_existing_poller_without_spawning_second_worker():
+    calls = []
+    second_call = threading.Event()
+
+    def fetch():
+        calls.append(threading.get_ident())
+        if len(calls) >= 2:
+            second_call.set()
+        return CliSnapshot("quota_unavailable", auth_status="authenticated")
+
+    poller = QuotaPoller(lambda _snapshot: None, fetch=fetch, interval=3600)
+    poller.start()
+    deadline = time.monotonic() + 1
+    while not calls and time.monotonic() < deadline:
+        time.sleep(0.002)
+    assert len(calls) == 1
+    poller.request_refresh()
+    assert second_call.wait(1)
+    assert len(set(calls)) == 1
+    poller.stop()
+    poller.join(timeout=1)
+
+
+def test_manual_refresh_respects_provider_rate_limit_cooldown():
+    observed = threading.Event()
+
+    def fetch():
+        return CliSnapshot("rate_limited", retry_after=60)
+
+    poller = QuotaPoller(lambda _snapshot: observed.set(), fetch=fetch, interval=60)
+    poller.start()
+    assert observed.wait(1)
+    deadline = time.monotonic() + 1
+    while poller._rate_limit_until == 0 and time.monotonic() < deadline:
+        time.sleep(0.002)
+    assert poller._rate_limit_until > time.monotonic()
+    assert poller.request_refresh() is False
+    poller.stop()
+    poller.join(timeout=1)

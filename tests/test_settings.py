@@ -1,6 +1,8 @@
 from neuralmeter.ui.settings import (
     DEFAULTS,
+    QUOTA_VISIBILITY_DEFAULTS,
     load_settings,
+    migrate_cli_quota_visibility,
     parse_quota_visibility,
     save_settings,
 )
@@ -13,17 +15,17 @@ def test_missing_gives_defaults(tmp_path):
 def test_quota_visibility_whitelist_defaults_and_boolean_validation():
     visible = parse_quota_visibility(
         {
-            "claude_web_5h": False,
+            "claude_cli_5h": False,
             "codex_cli_primary": True,
-            "gemini_web_activity": 1,
+            "unrecognized_quota": True,
             "secret": True,
         }
     )
-    assert visible["claude_web_5h"] is False
-    assert visible["codex_cli_primary"] is True
-    assert visible["gemini_web_activity"] is True
-    assert "secret" not in visible
     assert visible["claude_cli_5h"] is False
+    assert visible["codex_cli_primary"] is True
+    assert visible["antigravity"] is True
+    assert "secret" not in visible
+    assert "unrecognized_quota" not in visible
 
 
 def test_quota_visibility_keeps_static_defaults_and_caps_dynamic_overrides_separately():
@@ -31,8 +33,77 @@ def test_quota_visibility_keeps_static_defaults_and_caps_dynamic_overrides_separ
     parsed = parse_quota_visibility(raw)
     dynamic = [key for key in parsed if key.startswith("antigravity_")]
     assert len(dynamic) == 256
-    assert parsed["claude_web_5h"] is True
-    assert parsed["codex_cli_primary"] is False
+    assert parsed["claude_cli_5h"] is True
+    assert parsed["codex_cli_primary"] is True
+
+
+def test_legacy_web_preset_preserves_explicit_all_false_cli_visibility_and_consent(tmp_path):
+    settings = {
+        "quota_visibility": {
+            "claude_web_5h": True,
+            "chatgpt_web_5h": True,
+            "claude_cli_5h": False,
+            "claude_cli_weekly": False,
+            "codex_cli_primary": False,
+            "codex_cli_secondary": False,
+            "antigravity": False,
+        },
+        "claude_cli_enabled": False,
+        "codex_cli_enabled": False,
+        "antigravity_enabled": False,
+    }
+    assert migrate_cli_quota_visibility(settings)
+    assert all(settings["quota_visibility"][key] is False for key in QUOTA_VISIBILITY_DEFAULTS)
+    assert settings["claude_cli_enabled"] is False
+    assert settings["codex_cli_enabled"] is False
+    assert settings["antigravity_enabled"] is False
+    assert not migrate_cli_quota_visibility(settings)
+    path = tmp_path / "settings.json"
+    save_settings(settings, path)
+    reloaded = load_settings(path)
+    assert parse_quota_visibility(reloaded["quota_visibility"]) == {
+        key: False for key in QUOTA_VISIBILITY_DEFAULTS
+    }
+    assert reloaded["claude_cli_enabled"] is False
+    assert reloaded["codex_cli_enabled"] is False
+    assert reloaded["antigravity_enabled"] is False
+
+
+def test_explicit_cli_visibility_choice_survives_migration():
+    settings = {
+        "quota_visibility": {
+            "claude_web_5h": True,
+            "claude_cli_5h": True,
+            "claude_cli_weekly": False,
+            "codex_cli_primary": False,
+            "codex_cli_secondary": False,
+            "antigravity": False,
+        },
+    }
+    migrate_cli_quota_visibility(settings)
+    assert settings["quota_visibility"]["claude_cli_5h"] is True
+    assert settings["quota_visibility"]["codex_cli_primary"] is False
+    assert settings["quota_visibility"]["antigravity"] is False
+
+
+def test_missing_or_invalid_cli_visibility_fields_use_visible_defaults(tmp_path):
+    assert parse_quota_visibility({}) == QUOTA_VISIBILITY_DEFAULTS
+    parsed = parse_quota_visibility(
+        {"claude_cli_5h": False, "claude_cli_weekly": "false", "codex_cli_primary": None}
+    )
+    assert parsed["claude_cli_5h"] is False
+    assert parsed["claude_cli_weekly"] is True
+    assert parsed["codex_cli_primary"] is True
+    assert parsed["codex_cli_secondary"] is True
+    assert parsed["antigravity"] is True
+    path = tmp_path / "partial-settings.json"
+    save_settings({"quota_visibility": {"claude_cli_5h": False}}, path)
+    reloaded = load_settings(path)
+    resolved = parse_quota_visibility(reloaded.get("quota_visibility"))
+    assert resolved["claude_cli_5h"] is False
+    assert resolved["claude_cli_weekly"] is True
+    assert resolved["codex_cli_primary"] is True
+    assert resolved["antigravity"] is True
 
 
 def test_dynamic_quota_visibility_roundtrip_and_disappeared_bucket(tmp_path):

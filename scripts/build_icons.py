@@ -1,4 +1,4 @@
-"""Gera PNGs (extensao, app) e .ico a partir de assets/logo.svg. Idempotente."""
+"""Gera ícone do app e .ico a partir de assets/logo.svg. Idempotente."""
 
 import os
 import sys
@@ -12,9 +12,7 @@ from PySide6.QtSvg import QSvgRenderer  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 SVG = ROOT / "assets" / "logo.svg"
-EXT_DIR = ROOT / "extension" / "icons"
 ASSETS_DIR = ROOT / "src" / "neuralmeter" / "assets"
-EXT_SIZES = (16, 32, 48, 128)
 ICO_SIZES = (16, 24, 32, 48, 64, 256)
 
 
@@ -46,10 +44,7 @@ def build_ico(svg_path: Path, out: Path, sizes: tuple[int, ...] = ICO_SIZES) -> 
 
 def main() -> int:
     _app = QGuiApplication.instance() or QGuiApplication(sys.argv[:1])
-    EXT_DIR.mkdir(parents=True, exist_ok=True)
     ASSETS_DIR.mkdir(parents=True, exist_ok=True)
-    for s in EXT_SIZES:
-        render_svg_png(SVG, s).save(str(EXT_DIR / f"icon{s}.png"), "PNG")
     render_svg_png(SVG, 256).save(str(ASSETS_DIR / "icon.png"), "PNG")
     build_ico(SVG, ASSETS_DIR / "neuralmeter.ico")
     print("icons ok")

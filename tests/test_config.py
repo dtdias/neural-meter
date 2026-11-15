@@ -14,8 +14,3 @@ def test_db_path_filename(tmp_path, monkeypatch):
     path = config.get_db_path()
     assert path.name == "neuralmeter.db"
     assert path.parent == tmp_path
-
-
-def test_ws_host_is_loopback():
-    assert config.WS_HOST == "127.0.0.1"
-    assert config.WS_PORT == 8765

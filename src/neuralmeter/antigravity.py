@@ -173,6 +173,12 @@ def antigravity_endpoint_identity() -> str | None:
     )
 
 
+def antigravity_endpoint_available(install: Path | None = None) -> bool:
+    """Detect exact known IDE-owned listener without scanning candidate ports."""
+    install = install or _antigravity_install()
+    return bool(install and _owned_endpoint(install))
+
+
 def _post(endpoint: _Endpoint, path: str, timeout: float, cancel_event=None) -> dict | None:
     if cancel_event is not None and cancel_event.is_set():
         return None

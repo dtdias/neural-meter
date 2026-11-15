@@ -135,9 +135,9 @@ def test_quota_visibility_dialog_scrolls_and_preserves_all_valid_dynamic_rows(qa
         {saved_key: True},
         available,
     )
-    assert len(dialog.checkboxes) == 100
+    assert len(dialog.checkboxes) == 95
     assert dialog.checkboxes[saved_key].isChecked()
-    assert dialog.selection()["claude_web_5h"]
+    assert dialog.selection()["claude_cli_5h"]
     assert all(
         not box.isChecked()
         for key, box in dialog.checkboxes.items()
@@ -222,7 +222,7 @@ def test_tray_opt_in_worker_snapshot_reaches_separate_hud_then_disconnects(qapp)
         qapp.processEvents()
         time.sleep(0.005)
     assert "52%" in hud.cli_status.text()
-    assert not hud.rows["claude"].isVisible() or hud.rows["claude"].isHidden()
+    assert not hasattr(hud, "rows")
     tray.act_cli.setChecked(False)
     assert "desconectado" in hud.cli_status.text()
 
@@ -265,8 +265,8 @@ def test_codex_tray_opt_in_worker_snapshot_stays_codex_work(qapp):
     while "47%" not in hud.codex_status.text() and time.monotonic() < deadline:
         qapp.processEvents()
         time.sleep(0.005)
-    assert "Codex / Work" in hud.codex_status.text()
-    assert "primary 47%" in hud.codex_status.text()
+    assert "Codex CLI:" in hud.codex_status.text()
+    assert "primary: 47% usado" in hud.codex_status.text()
     assert "ChatGPT" not in hud.codex_status.text()
     tray.act_codex.setChecked(False)
     assert "não conectado" in hud.codex_status.text()

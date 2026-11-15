@@ -3,8 +3,6 @@
 import os
 from pathlib import Path
 
-WS_HOST = "127.0.0.1"
-WS_PORT = 8765
 DB_FILENAME = "neuralmeter.db"
 DATA_DIR_ENV = "NEURALMETER_DATA_DIR"
 

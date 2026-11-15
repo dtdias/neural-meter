@@ -1,6 +1,5 @@
 """Auto-teste sem UI (smoke do binario congelado): resultado via exit code."""
 
-import asyncio
 from collections.abc import Callable
 from pathlib import Path
 
@@ -9,10 +8,6 @@ def _check_qt() -> None:
     import PySide6.QtGui  # noqa: F401
     import PySide6.QtSvg  # noqa: F401
     import PySide6.QtWidgets  # noqa: F401
-
-
-def _check_websockets() -> None:
-    import websockets.asyncio.server  # noqa: F401
 
 
 def _check_db() -> None:
@@ -34,25 +29,19 @@ def _check_icon() -> None:
         raise RuntimeError("icon.png nao encontrado")
 
 
-def _check_ws_bind() -> None:
-    from websockets.asyncio.server import serve
-
-    async def handler(ws) -> None:  # pragma: no cover
-        pass
-
-    async def run() -> None:
-        async with serve(handler, "127.0.0.1", 0):
-            pass
-
-    asyncio.run(run())
+def _check_cli_connectors() -> None:
+    import neuralmeter.antigravity  # noqa: F401
+    import neuralmeter.claude_cli  # noqa: F401
+    import neuralmeter.codex_cli  # noqa: F401
+    import neuralmeter.ui.collector_lifecycle  # noqa: F401
+    import neuralmeter.ui.connections_dialog  # noqa: F401
 
 
 CHECKS: list[tuple[str, Callable[[], None]]] = [
     ("qt_imports", _check_qt),
-    ("websockets_import", _check_websockets),
     ("db_migrate", _check_db),
     ("app_icon", _check_icon),
-    ("ws_bind", _check_ws_bind),
+    ("cli_connectors", _check_cli_connectors),
 ]
 
 

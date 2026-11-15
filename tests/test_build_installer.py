@@ -1,6 +1,4 @@
-import hashlib
 import importlib.util
-import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,18 +31,11 @@ def test_find_iscc_none():
     assert bi.find_iscc({}, lambda n: None, lambda p: False) is None
 
 
-def test_extension_zip_contents_and_determinism(tmp_path):
-    a = bi.build_extension_zip(ROOT / "extension", tmp_path / "a.zip")
-    b = bi.build_extension_zip(ROOT / "extension", tmp_path / "b.zip")
-    with zipfile.ZipFile(a) as zf:
-        names = zf.namelist()
-    assert "manifest.json" in names
-    assert "src/background.js" in names
-    assert "icons/icon128.png" in names
-    assert names == sorted(names)
-    assert not any(n.startswith(("test", "node_modules")) or "package" in n for n in names)
-    assert not any(n.endswith(".md") for n in names)
-    assert hashlib.sha256(a.read_bytes()).digest() == hashlib.sha256(b.read_bytes()).digest()
+def test_installer_builder_has_no_extension_packaging():
+    source = (ROOT / "scripts" / "build_installer.py").read_text(encoding="utf-8")
+    assert "build_extension_zip" not in source
+    assert "Bridge-" not in source
+    assert not (ROOT / "extension").exists()
 
 
 def test_iscc_command():

@@ -15,16 +15,11 @@ from neuralmeter.privacy import PrivacySettings, clamp_retention_days
 DEFAULTS: dict = {"hud_pos": None, "opacity": 100, "compact": False, "click_through": False}
 
 QUOTA_VISIBILITY_DEFAULTS = {
-    "claude_web_5h": True,
-    "claude_web_weekly": True,
-    "claude_cli_5h": False,
-    "claude_cli_weekly": False,
-    "chatgpt_web_5h": True,
-    "chatgpt_web_weekly": True,
-    "codex_cli_primary": False,
-    "codex_cli_secondary": False,
-    "gemini_web_activity": True,
-    "antigravity": False,
+    "claude_cli_5h": True,
+    "claude_cli_weekly": True,
+    "codex_cli_primary": True,
+    "codex_cli_secondary": True,
+    "antigravity": True,
 }
 MAX_QUOTA_OVERRIDES = 256
 MAX_SETTINGS_BYTES = 64 * 1024
@@ -50,6 +45,14 @@ def parse_quota_visibility(raw) -> dict[str, bool]:
                 values[key] = value
                 dynamic_count += 1
     return values
+
+
+def migrate_cli_quota_visibility(settings: dict) -> bool:
+    """Record CLI-only UI migration; never infer intent from a legacy Web selection."""
+    if settings.get("cli_only_visibility_migrated") is True:
+        return False
+    settings["cli_only_visibility_migrated"] = True
+    return True
 
 
 OPACITY_PRESETS = (20, 40, 60, 80, 100)
