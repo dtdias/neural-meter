@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="96" height="96" viewBox="0 0 96 96">
+  <title>Artboard 1</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <path id="NeuralMeter___outer_ring" data-name="NeuralMeter — outer ring" d="M5 48 C5 24.252 24.252 5 48 5 C71.748 5 91 24.252 91 48 C91 71.748 71.748 91 48 91 C24.252 91 5 71.748 5 48 Z" fill="none" stroke="#3dd6b0" stroke-width="5" stroke-miterlimit="10"/>
+    <path id="Meter_arc" data-name="Meter arc" d="M23 63 C26.189 51.838 36.391 44.141 48 44.141 C59.609 44.141 69.811 51.838 73 63" fill="none" stroke="#3dd6b0" stroke-width="5" stroke-linecap="round" stroke-miterlimit="10"/>
+    <path id="Meter_needle" data-name="Meter needle" d="M48 55 L66 34" fill="none" stroke="#f1b86a" stroke-width="5" stroke-linecap="round" stroke-miterlimit="10"/>
+    <path id="Meter_pivot" data-name="Meter pivot" d="M42 55 C42 51.686 44.686 49 48 49 C51.314 49 54 51.686 54 55 C54 58.314 51.314 61 48 61 C44.686 61 42 58.314 42 55 Z" fill="#f1b86a"/>
+  </g>
+</svg>

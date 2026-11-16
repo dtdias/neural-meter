@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'">
+    <title>NeuralMeter — Dashboard local</title>
+    <link rel="icon" href="/assets/icons/mark.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/style.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="rail">
+        <a class="brand" href="/" aria-label="NeuralMeter início">
+          <img class="brand-icon" src="/assets/icons/mark.svg" alt="">
+          <span>Neural<span class="brand-light">Meter</span></span>
+        </a>
+        <nav aria-label="Navegação principal">
+          <a class="nav-link selected" href="#overview"><img src="/assets/icons/dashboard.svg" alt="">Visão geral</a>
+          <a class="nav-link" href="#models"><img src="/assets/icons/usage.svg" alt="">Consumo por modelo</a>
+          <a class="nav-link" href="#sources">Fontes locais</a>
+        </nav>
+        <div class="rail-note">LOCAL · PRIVADO<br>Sem conversa armazenada</div>
+      </aside>
+      <main id="overview">
+        <header class="topbar">
+          <div><p class="eyebrow">PAINEL DE USO</p><h1>Seu trabalho, em perspectiva.</h1>
+            <p class="lede">Quotas oficiais e contagens locais — cada dado com origem explícita.</p></div>
+          <label class="theme-control" for="theme">Tema
+            <select id="theme"><option value="graphite">Grafite</option><option value="light">Claro</option><option value="aurora">Aurora</option></select>
+          </label>
+        </header>
+        <section class="section-head">
+          <div><p class="eyebrow">FONTES CLI</p><h2>Visão geral</h2></div>
+          <div class="actions"><button id="refresh" class="button secondary" type="button"><img class="refresh-icon" src="/assets/icons/refresh.svg" alt="">Atualizar autorizadas</button>
+            <button id="shutdown" class="button secondary" type="button">Encerrar NeuralMeter</button></div>
+        </section>
+        <section id="source-cards" class="source-grid" aria-live="polite" aria-busy="true"></section>
+        <section id="models" class="usage-panel">
+          <div class="section-head"><div><p class="eyebrow">ANTIGRAVITY · HISTÓRICO LOCAL</p><h2>Consumo por modelo</h2></div>
+            <label class="period-control" for="period">Período
+              <select id="period"><option value="today">Hoje</option><option value="last_7_days">Últimos 7 dias</option><option value="history">Histórico disponível</option></select>
+            </label>
+          </div>
+          <p id="history-note" class="subtle">Conteúdo e argumentos lidos somente em memória, após autorização. Valores calculados são aproximações (~).</p>
+          <div class="table-wrap"><table><thead><tr>
+            <th scope="col">Modelo</th><th scope="col">Entrada medida</th><th scope="col">Entrada aprox.</th>
+            <th scope="col">Saída medida</th><th scope="col">Saída aprox.</th><th scope="col">Cache leitura</th>
+            <th scope="col">Cache gravação</th><th scope="col">Cobertura</th>
+          </tr></thead><tbody id="model-rows"></tbody></table></div>
+        </section>
+        <section id="sources" class="privacy-panel">
+          <div><p class="eyebrow">VOCÊ NO CONTROLE</p><h2>Leitura local opcional</h2>
+            <p>Ative cada fonte separadamente. Antigravity lê contagens e metadados nos layouts locais conhecidos. Conteúdo, raciocínio e argumentos podem ser examinados somente em memória para estimar caracteres; nada disso é enviado ou persistido.</p>
+          </div>
+          <div id="consent-controls" class="consent-list"></div>
+        </section>
+        <div id="notice" role="status" aria-live="polite"></div>
+        <footer>NeuralMeter · Interface local em 127.0.0.1 · Ausência de dado significa desconhecido, nunca quota zero.</footer>
+      </main>
+    </div>
+  </body>
+</html>

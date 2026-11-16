@@ -1,5 +1,14 @@
 # Progresso - NeuralMeter v1.0
 
+## Nova etapa — interface web local (2026-11-16)
+- [~] Escopo web local/CLI-only em `feat/local-web-dashboard`, base `dev` `b36c9f1`; revisão corretiva 2/2 em andamento, fontes ainda sem freeze final.
+- [~] Achados corrigidos: restauração de opt-ins persistidos sem regravar settings; backoff 429 preservado através de fencing; limpeza completa de payload em TTL/falha/desconexão/identidade; intervalo normal entre leituras e resposta UI distinta para cooldown. Focados antes das alterações finais: 137 passaram; transições concorrentes 18 passaram em cada 3 repetições. E2E Chrome executado duas vezes com PASS (11 assertions, 23 PNG); nova asserção final API/UI para `not_opted_in` adicionada depois e exige novo freeze+gates. Não declarar correção aprovada nem gates completos.
+- Histórico: C-PRE1 normaliza rótulos `USER_SETTINGS_CHANGE` bounded e retorna apenas ID público allowlisted, nunca slug/raw unknown. C-PRE2 E2E real Chrome: CSS `zoom` 1/1.5/2 distinto de toolbar zoom/DPI, CSS viewport reduzida pelo fator, raster alvo 800×600/1440×900, DPR registrada. Preview da correção 1: `C:\Users\Daniel Trajano\AppData\Local\Temp\opencode\local-web-final-correction1-20261116T144456Z\browser-e2e-preview-D\preview-manifest.json` SHA-256 `17e13c432bfa832d502ce5c44b80f3afabc8de4756f5d85b029710437cb778d1`; 23 PNG, 0 tráfego externo/falhas/erros de página/console, worker+monitor joined. Histórico não substitui gate final. Builders suportam outputs isolados; installer sem `taskkill`. Freeze e gates completos Fase 1 pendentes.
+- Decisão 2026-11-16: HTTP GET snapshot não inicia providers; porta padrão 8766, `--port 0` em teste. Só consentimento explícito próprio habilita dados. Antigravity CLI history nunca representa quota oficial Gemini.
+- Limpeza temporária autorizada previamente em somente três diretórios scratch old-Qt; SHA de 1.488 arquivos preservados idênticos, git status antigo idêntico. Espaço C: observado 57,801,846,784 bytes; delta da limpeza 47,665,152 bytes, não atribuir todo espaço à limpeza.
+- Referência Token Meter pin `f8a767a5a187b7c4439111abe4cfb6a3d59019d5` inspecionada read-only; adaptado somente parser bounded da seleção de modelo AGY, normalização limitada antes lookup em allowlist pública. Sem runtime completo, pricing, globbing, DB, tool args, delete APIs ou UI copiados. MIT 2026 Galileo Agent Labs e notice incluídos em pacote/exe; testes sintéticos não lêem histórico real.
+- Gates anteriores são históricos, não evidência desta correção; reexecução final ainda não iniciada. Sem aprovação, commit ou publicação.
+
 ## Ciclo collector startup — 2026-11-15
 - [~] `feat/fix-collector-startup`: startup com 3 opt-ins reproduziu `QuotaPoller.is_alive` ausente; wrapper agora delega estado real da `threading.Thread`; cobertura real com fetch fake/Events. Gates Fase 1 pendentes nesta branch; sem commit/publicação.
 
