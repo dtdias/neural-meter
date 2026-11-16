@@ -43,6 +43,12 @@ a = Analysis(
     datas=[
         (os.path.join(ASSETS, "icon.png"), "neuralmeter/assets"),
         (ICO, "neuralmeter/assets"),
+        (os.path.join(SRC, "neuralmeter", "web_assets"), "neuralmeter/web_assets"),
+        (os.path.join(SRC, "neuralmeter", "LICENSES"), "neuralmeter/LICENSES"),
+        (
+            os.path.join(SRC, "neuralmeter", "THIRD_PARTY_NOTICES.txt"),
+            "neuralmeter",
+        ),
     ],
     hiddenimports=collect_submodules("neuralmeter"),
     hookspath=[],

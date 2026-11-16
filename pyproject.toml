@@ -18,6 +18,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/neuralmeter"]
+include = [
+    "src/neuralmeter/assets/**",
+    "src/neuralmeter/web_assets/**",
+    "src/neuralmeter/LICENSES/**",
+    "src/neuralmeter/THIRD_PARTY_NOTICES.txt",
+]
 
 [tool.ruff]
 line-length = 100

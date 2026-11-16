@@ -44,13 +44,26 @@ def test_iscc_command():
     assert cmd[-1] == "x.iss"
 
 
+def test_iscc_command_supports_isolated_exe_and_output_paths():
+    exe = Path("C:/Temp/NeuralMeter.exe")
+    output = Path("C:/Temp/evidence setup")
+    cmd = bi.iscc_command(Path("ISCC.exe"), Path("x.iss"), "0.2.2", exe, output)
+    assert f"/DAppExePath={exe}" in cmd
+    assert f"/O{output}" in cmd
+    assert cmd[-1] == "x.iss"
+
+
 def test_iss_content():
     for needle in (
         "PrivilegesRequired=lowest",
         "{localappdata}\\Programs\\NeuralMeter",
         "uninsdeletevalue",
         "CurrentVersion\\Run",
+        '#define AppExePath "..\\dist\\NeuralMeter.exe"',
+        'Source: "{#AppExePath}";',
     ):
         assert needle in ISS_TEXT
     assert "{commonpf}" not in ISS_TEXT
     assert "admin" not in ISS_TEXT.lower()
+    assert "[UninstallRun]" not in ISS_TEXT
+    assert "taskkill" not in ISS_TEXT.lower()

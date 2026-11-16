@@ -1,25 +1,27 @@
-# Documento de Requisitos de Produto (PRD) — NeuralMeter CLI-only
+# Documento de Requisitos de Produto (PRD) — NeuralMeter local web
 
 **Produto:** NeuralMeter  
-**Plataforma:** Windows Desktop
+**Plataforma:** Windows, interface web local
 **Versão:** 0.2.x (CLI-only transition)
 **Status:** Especificação vigente: seção 0; seções anteriores preservadas como histórico, não normativas.
 
 ---
 
-## 0. Escopo vigente — 2026-11-15
+## 0. Escopo vigente — 2026-11-16
 
-Este escopo substitui requisitos anteriores de browser/Manifest V3/WebSocket. NeuralMeter monitora somente **Claude Code**, **Codex CLI** e **Antigravity IDE experimental**. Não existe conexão com Claude Web, ChatGPT Web, Gemini Web, browser, extensão ou servidor WebSocket; fontes Web antigas e release notes continuam como histórico, sem reativação nem alteração retroativa de release.
+Interface apresentada em navegador local, servida exclusivamente em `127.0.0.1:8766` (porta configurável). Origem dos dados permanece **Claude Code**, **Codex CLI** e **Antigravity CLI** opt-in. Não existe coleta de conversas/browser, extensão ou servidor WebSocket; fontes Web antigas e release notes continuam como histórico, sem alteração retroativa.
 
-- HUD visível mostra as três fontes, descoberta local explícita, estados de instalação/autenticação/consentimento/quota separados, controles Conectar/Desconectar, conectar fontes detectadas e atualizar quotas autorizadas.
+- Dashboard web responsivo mostra três fontes, estado de autenticação/consentimento/quota/histórico separado, consentimento opt-in persistente por fonte e atualização autorizada. Preferências visuais não habilitam coleta.
 - Descoberta é local, read-only e não autoriza coleta. Consentimento opt-in persiste por fonte; preferências de exibição são independentes e preservadas.
-- Quota somente por consultas read-only permitidas: Claude Code OAuth/sessão existente, app-server oficial Codex com refresh desabilitado, serviço loopback do Antigravity com listener identificado. Sem login, refresh, inferência, browser, varredura de portas, alteração de settings/processos ou persistência de credenciais/snapshots.
-- Limite/reset ausente, expirado ou incompatível permanece desconhecido; nunca exibir `0%` como substituto. Auth detectada não significa quota disponível. Antigravity permanece experimental e não se confunde com Gemini CLI/Web.
+- Startup restaura somente consentimentos persistidos como `True` literal, inicia workers autorizados sem regravar settings e mantém fontes desativadas sem probes de identidade/leitura. Refresh manual obedece intervalo mínimo normal por fonte e `Retry-After`; API/UI diferenciam cooldown de ausência de opt-in.
+- Quota somente por consultas read-only permitidas: Claude Code OAuth/sessão existente e app-server oficial Codex com refresh desabilitado. Antigravity CLI fornece histórico local consentido por modelo; quota oficial Antigravity/Gemini continua desconhecida. Sem login, refresh, inferência, coleta browser, varredura de portas, edição de settings/transcripts/config de provider ou persistência de credenciais, identidade, conteúdo, caminhos e snapshots.
+- Limite/reset ausente, expirado ou incompatível permanece desconhecido; nunca exibir `0%` como substituto. Contagens de entrada, saída e cache mantêm campos distintos; valores derivados de caracteres mostram `~`; histórico ambíguo/incompleto é marcado parcial.
+- TTL, falha, troca de identidade e desconexão limpam todos os campos públicos de quota/uso, incluindo modelos, períodos e totais; totals desconhecidos são `null`, não `0`. Dados privados permanecem apenas em memória efêmera para fencing/backoff e nunca entram na API.
 - Dados SQLite e configurações existentes permanecem intactos na migração; nenhum purge/migração destrutiva por remoção de browser. Retenção histórica não é aplicada automaticamente nesta inicialização CLI-only.
 - Build/installer entregam somente app/Setup. Testes de browser/extensão são N/A por feature removida, não gates aprovados.
-- Perf CLI-only mede processo isolado e entrega Qt sintética; não mede consulta real, rede, browser nem usuário. Limites e lacunas devem ser declarados.
+- Perf web mede processo backend e GET snapshot por HTTP loopback; não prova quota real nem renderização do browser. E2E real-browser da UI local continua gate aplicável: deve registrar CSS zoom real (distinto de toolbar zoom/DPI), viewport/DPR e screenshots; testes legados browser/extensão são N/A por remoção de feature.
 
-As seções 1 em diante documentam versão histórica com arquitetura browser. Em caso de divergência, seção 0 prevalece; não implementar requisitos Web legados.
+As seções 1 em diante documentam versões históricas. Em caso de divergência, seção 0 prevalece; não implementar requisitos de coleta Web legados.
 
 ---
 
@@ -72,7 +74,7 @@ Fonte separada de Gemini Web e Gemini CLI. Conector IDE opt-in localiza somente 
 
 Documentação oficial CLI descreve campo JSON `quota` para script `statusLine`, mas JSON inclui campos sensíveis (email, transcript path e contexto) e configurar hook exige ação explícita do usuário. `/usage`/`/quota` abre painel TUI, não endpoint JSON standalone. Não configurar automaticamente. Identidade de conta só considerada conhecida se resposta expõe ID estável não-email; ID passa keyed-HMAC efêmero em memória, nunca UI/settings/log/DB. Sem ID estável, UI declara identidade não exposta; troca interna sem sinal observável pode permanecer desconhecida até próximo poll (60 s) e TTL HUD (120 s). Não afirmar detecção instantânea.
 
-Referências: [Codex app-server oficial](https://developers.openai.com/codex/app-server.md); [Antigravity statusLine oficial](https://antigravity.google/docs/cli/statusline/); [Antigravity usage CLI oficial](https://antigravity.google/docs/cli/commands/usage/); detector/protocolo comunitário [n2ns/antigravity-panel `detection_utils.ts`](https://github.com/n2ns/antigravity-panel/blob/8e7513e6236f0ce1361db857a80f83ee962a284a/src/shared/platform/detection_utils.ts) e [quota service](https://github.com/n2ns/antigravity-panel/blob/8e7513e6236f0ce1361db857a80f83ee962a284a/src/model/services/quota.service.ts), Apache-2.0. Token Meter fixado em `f8a767a5a187b7c4439111abe4cfb6a3d59019f6`/MIT não implementa quota Antigravity; nenhum código copiado. Protocolo comunitário não é contrato Google. Sem execução de agente/inferência.
+Referências históricas: [Codex app-server oficial](https://developers.openai.com/codex/app-server.md); [Antigravity statusLine oficial](https://antigravity.google/docs/cli/statusline/); [Antigravity usage CLI oficial](https://antigravity.google/docs/cli/commands/usage/); protocolo comunitário `n2ns/antigravity-panel` (Apache-2.0), sem uso no leitor CLI. Token Meter fixado em `f8a767a5a187b7c4439111abe4cfb6a3d59019d5`/MIT: adaptado somente parser bounded de seleção de modelo em `antigravity_usage.py`, allowlist canônica impede eco de rótulo privado. Copyright 2026 Galileo Agent Labs e MIT em `src/neuralmeter/LICENSES/TokenMeter-MIT.txt` e `THIRD_PARTY_NOTICES.txt`; nenhum runtime, pricing, tool, DB ou delete API copiado. Sem inferência.
 
 ### 2.1. Módulo Collector (Browser Bridge)
 * **Extensão Leve (Manifest V3):** Roda silenciosamente no navegador padrão do usuário (Chrome, Edge, Brave, Opera) onde a sessão já está autenticada.

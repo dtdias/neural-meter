@@ -3,6 +3,9 @@
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
+#ifndef AppExePath
+  #define AppExePath "..\dist\NeuralMeter.exe"
+#endif
 
 [Setup]
 AppId={{6B1F4D52-3C8E-4A7B-9E21-5D0A7C93F1B4}
@@ -29,7 +32,7 @@ Name: "desktopicon"; Description: "Criar atalho na area de trabalho"; Flags: unc
 Name: "autostart"; Description: "Iniciar com o Windows"; Flags: unchecked
 
 [Files]
-Source: "..\dist\NeuralMeter.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#AppExePath}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\NeuralMeter"; Filename: "{app}\NeuralMeter.exe"
@@ -40,8 +43,5 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "{app}\NeuralMeter.exe"; Description: "Iniciar NeuralMeter"; Flags: postinstall nowait skipifsilent
-
-[UninstallRun]
-Filename: "{sys}\taskkill.exe"; Parameters: "/IM NeuralMeter.exe /F"; Flags: runhidden; RunOnceId: "KillNeuralMeter"
 
 ; Dados do usuario em %LOCALAPPDATA%\NeuralMeter sao mantidos na desinstalacao.

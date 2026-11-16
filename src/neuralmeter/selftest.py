@@ -2,6 +2,8 @@
 
 from collections.abc import Callable
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from urllib.request import urlopen
 
 
 def _check_qt() -> None:
@@ -37,11 +39,37 @@ def _check_cli_connectors() -> None:
     import neuralmeter.ui.connections_dialog  # noqa: F401
 
 
+def _check_local_web() -> None:
+    import json
+
+    from neuralmeter.web import LocalDashboard
+
+    with TemporaryDirectory(prefix="neuralmeter-web-selftest-") as directory:
+        dashboard = LocalDashboard(port=0, data_dir=Path(directory))
+        try:
+            dashboard.start(open_browser=False)
+            with urlopen(dashboard.url, timeout=2) as response:
+                if response.status != 200 or b"Seu trabalho" not in response.read():
+                    raise RuntimeError("local UI failed")
+            with urlopen(dashboard.url + "api/snapshot", timeout=2) as response:
+                snapshot = json.loads(response.read())
+            if any(source["consent"] for source in snapshot["sources"].values()):
+                raise RuntimeError("self-test unexpectedly enabled source collection")
+            package_dir = Path(__file__).parent
+            notice = package_dir / "THIRD_PARTY_NOTICES.txt"
+            license_file = package_dir / "LICENSES" / "TokenMeter-MIT.txt"
+            if not notice.is_file() or not license_file.is_file():
+                raise RuntimeError("third-party license notice missing from package")
+        finally:
+            dashboard.close()
+
+
 CHECKS: list[tuple[str, Callable[[], None]]] = [
     ("qt_imports", _check_qt),
     ("db_migrate", _check_db),
     ("app_icon", _check_icon),
     ("cli_connectors", _check_cli_connectors),
+    ("local_web_loopback", _check_local_web),
 ]
 
 

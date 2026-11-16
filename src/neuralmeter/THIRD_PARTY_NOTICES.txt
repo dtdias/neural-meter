@@ -1,0 +1,11 @@
+NeuralMeter includes a bounded adaptation of the Antigravity model-selection
+text parser from Token Meter, used only to derive allowlisted public model IDs
+from explicitly consented local transcript content. No Token Meter runtime,
+filesystem discovery, pricing, session database, tool, deletion, or UI code is
+included.
+
+Token Meter
+Copyright (c) 2026 Galileo Agent Labs
+Source: https://github.com/splunk/token-meter/tree/f8a767a5a187b7c4439111abe4cfb6a3d59019d5
+Adapted source: token_meter/runtimes/agy.py
+License: MIT; full text in LICENSES/TokenMeter-MIT.txt
