@@ -1,5 +1,8 @@
 # Progresso - NeuralMeter v1.0
 
+## Ciclo collector startup — 2026-11-15
+- [~] `feat/fix-collector-startup`: startup com 3 opt-ins reproduziu `QuotaPoller.is_alive` ausente; wrapper agora delega estado real da `threading.Thread`; cobertura real com fetch fake/Events. Gates Fase 1 pendentes nesta branch; sem commit/publicação.
+
 ## Ciclo vigente — CLI-only (2026-11-15)
 - [~] 2026-11-15 — Correção após reprovação de auditoria: migração preserva todas quotas CLI explicitamente desmarcadas; defaults visíveis só para chaves ausentes/inválidas. Ação HUD de exibição não altera opt-in; HUD vazio mantém altura para estados/ação visíveis. Reexecutar gates após congelamento. Consulta read-only final executada para `claude_cli.py` SHA estável; sem nova consulta, pois ajuste posterior afetou somente layout. Sem commit/publicação.
 - Releases/tags/assets existentes, inclusive v0.2.2, não modificados; esta revisão ainda não publicada.
