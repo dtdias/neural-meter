@@ -14,7 +14,7 @@ from neuralmeter.antigravity import (
     antigravity_endpoint_identity,
     read_antigravity_quota,
 )
-from neuralmeter.claude_cli import CliSnapshot, QuotaPoller, credential_identity
+from neuralmeter.claude_cli import CliSnapshot, QuotaPoller, credential_identity, read_usage
 from neuralmeter.codex_cli import CodexSnapshot, codex_auth_metadata_identity, read_codex_quota
 from neuralmeter.config import get_data_dir
 from neuralmeter.db import connect_db
@@ -102,7 +102,7 @@ def run_app(argv: list[str] | None = None) -> int:
         identity_probes.cancel(source, generation=generation)
 
     def start_claude_poller() -> None:
-        start_collector("claude", lambda callback: QuotaPoller(callback))
+        start_collector("claude", lambda callback: QuotaPoller(callback, fetch=read_usage))
 
     def start_codex_poller() -> None:
         start_collector(

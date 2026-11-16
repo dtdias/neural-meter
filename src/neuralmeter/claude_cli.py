@@ -384,3 +384,8 @@ class QuotaPoller:
         thread = self._thread
         if thread and thread is not threading.current_thread():
             thread.join(timeout=timeout)
+
+    def is_alive(self) -> bool:
+        """Report underlying worker state, including in-flight fetch after stop request."""
+        thread = self._thread
+        return thread is not None and thread.is_alive()
